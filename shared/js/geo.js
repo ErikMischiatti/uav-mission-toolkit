@@ -339,6 +339,78 @@ export function maxRadiusFromOriginM(points) {
 }
 
 /**
+ * Which polygon edges does a segment cross?
+ *
+ * This is what distinguishes "both ends are inside the safety area" from "the
+ * path stays inside the safety area". For a concave polygon those are different
+ * statements: a straight leg between two interior points can cut across a
+ * notch and leave the area entirely in between, and a containment test on the
+ * waypoints alone cannot see it.
+ *
+ * Only proper crossings count. A segment that merely touches a vertex, or runs
+ * along an edge, is not reported: those are boundary cases that a planner
+ * should look at anyway, and reporting them would flag every trajectory whose
+ * waypoint sits exactly on the fence.
+ *
+ * @param {{east_m:number,north_m:number}} a segment start
+ * @param {{east_m:number,north_m:number}} b segment end
+ * @param {Array<{east_m:number,north_m:number}>} polygon ring, not repeating the first vertex
+ * @returns {number[]} indices of the crossed edges, empty when the segment stays on one side
+ */
+export function segmentPolygonCrossings(a, b, polygon) {
+  const crossings = [];
+  if (!Array.isArray(polygon) || polygon.length < 3) return crossings;
+  if (!isFinitePoint(a) || !isFinitePoint(b)) return crossings;
+
+  for (let i = 0; i < polygon.length; i += 1) {
+    const edgeStart = polygon[i];
+    const edgeEnd = polygon[(i + 1) % polygon.length];
+    if (!isFinitePoint(edgeStart) || !isFinitePoint(edgeEnd)) continue;
+    if (segmentsProperlyIntersect(a, b, edgeStart, edgeEnd)) crossings.push(i);
+  }
+  return crossings;
+}
+
+/**
+ * Indices of the path segments that do not stay inside the polygon.
+ *
+ * A segment is reported when either endpoint is outside, or when it crosses an
+ * edge on its way between two interior points.
+ *
+ * @param {Array<{east_m:number,north_m:number}>} points
+ * @param {Array<{east_m:number,north_m:number}>} polygon
+ * @param {{closed?: boolean}} [options]
+ * @returns {number[]} segment indices; segment i runs from points[i] to points[i+1]
+ */
+export function pathSegmentsLeavingPolygon(points, polygon, options = {}) {
+  const { closed = false } = options;
+  const leaving = [];
+  if (!Array.isArray(points) || points.length < 2) return leaving;
+  if (!Array.isArray(polygon) || polygon.length < 3) return leaving;
+
+  const limit = closed ? points.length : points.length - 1;
+  for (let i = 0; i < limit; i += 1) {
+    const from = points[i];
+    const to = points[(i + 1) % points.length];
+    if (!isFinitePoint(from) || !isFinitePoint(to)) continue;
+    const endpointOutside = !pointInPolygon(from, polygon) || !pointInPolygon(to, polygon);
+    if (endpointOutside || segmentPolygonCrossings(from, to, polygon).length > 0) {
+      leaving.push(i);
+    }
+  }
+  return leaving;
+}
+
+function isFinitePoint(point) {
+  return (
+    point !== null &&
+    typeof point === 'object' &&
+    Number.isFinite(point.east_m) &&
+    Number.isFinite(point.north_m)
+  );
+}
+
+/**
  * Do two closed line segments properly intersect? Shared endpoints do not
  * count, so adjacent polygon edges are not reported.
  */
