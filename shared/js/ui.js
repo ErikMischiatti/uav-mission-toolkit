@@ -129,16 +129,18 @@ export function installGlobalErrorHandlers(container) {
 }
 
 /**
- * Leaflet is loaded from a CDN by each tool's HTML. Fail with an actionable
- * message rather than a bare "L is not defined".
+ * Leaflet is vendored under shared/vendor/leaflet/ and loaded by each tool's
+ * HTML, so this only fails when the repository is incomplete or the page was
+ * opened from the wrong place. Fail with an actionable message rather than a
+ * bare "L is not defined".
  * @returns {object} the Leaflet namespace
  */
 export function ensureLeaflet() {
   if (typeof window.L === 'undefined') {
     throw new Error(
-      'Leaflet could not be loaded from the CDN, so the map is unavailable. ' +
-        'Check your network connection, or vendor Leaflet locally as described in ' +
-        'THIRD_PARTY_NOTICES.md. Everything else on this page still works.'
+      'Leaflet did not load from shared/vendor/leaflet/leaflet.js, so the map is ' +
+        'unavailable. Check that the file exists and that the page is served over HTTP ' +
+        'from the repository root. Everything else on this page still works.'
     );
   }
   return window.L;

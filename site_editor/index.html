@@ -9,17 +9,12 @@
       content="Map-based editor for UAV operating site definitions: origin, safety area, altitude limits and mission points."
     />
 
-    <!-- Leaflet 1.9.4, pinned. See THIRD_PARTY_NOTICES.md. -->
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      crossorigin=""
-    />
-    <script
-      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      crossorigin=""
-      defer
-    ></script>
+    <!--
+      Leaflet 1.9.4, vendored locally under shared/vendor/leaflet/ so the map
+      works without an internet connection. See THIRD_PARTY_NOTICES.md.
+    -->
+    <link rel="stylesheet" href="../shared/vendor/leaflet/leaflet.css" />
+    <script src="../shared/vendor/leaflet/leaflet.js" defer></script>
 
     <link rel="stylesheet" href="../shared/css/common.css" />
     <link rel="stylesheet" href="style.css" />
