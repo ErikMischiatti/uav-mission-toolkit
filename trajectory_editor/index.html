@@ -159,7 +159,7 @@
             <button id="generate" type="button">Replace with preset</button>
           </div>
           <p class="panel__hint">
-            Replaces every control point, including manual edits.
+            Replaces every control point, including manual edits. Undo restores them.
           </p>
         </section>
 
@@ -263,6 +263,10 @@
 
       <div class="workspace">
         <div class="workspace-toolbar">
+          <div class="button-group">
+            <button id="undo" type="button" class="quiet" title="Undo (Ctrl+Z)" disabled>Undo</button>
+            <button id="redo" type="button" class="quiet" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+          </div>
           <button id="fit-view" type="button" class="quiet">Fit view</button>
           <div class="workspace-toolbar__spacer"></div>
           <span id="cursor-readout" class="workspace-toolbar__readout">&nbsp;</span>

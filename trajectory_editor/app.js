@@ -17,6 +17,7 @@
  */
 
 import { distance2dM, pathSegmentsLeavingPolygon, pointInPolygon } from '../shared/js/geo.js';
+import { History, attachHistoryControls } from '../shared/js/history.js';
 import {
   downloadJson,
   downloadText,
@@ -94,6 +95,13 @@ const state = {
   manifestUrl: null,
   /** @type {Array<object>} */
   manifestSites: [],
+  /**
+   * Undo/redo over the editable part of the trajectory: the control points,
+   * the closed flag and the selection. The site is context, not content, so it
+   * is deliberately not part of the history — choosing a different site is not
+   * an edit to the trajectory.
+   */
+  history: new History(),
 };
 
 const els = {};
@@ -149,6 +157,9 @@ function cacheElements() {
   els.siteFile = must('#site-file');
   els.siteSummary = must('#site-summary');
 
+  els.undo = must('#undo');
+  els.redo = must('#redo');
+
   els.ctxSite = must('#ctx-site');
   els.ctxFrame = must('#ctx-frame');
   els.ctxAltitude = must('#ctx-altitude');
@@ -179,6 +190,7 @@ function wireEvents() {
   els.altitudeRef.addEventListener('change', () => refresh({ rebuildTable: false }));
   els.closed.addEventListener('change', () => {
     state.closed = els.closed.checked;
+    commit(state.closed ? 'Close the path' : 'Open the path');
     refresh({ rebuildTable: true });
   });
   els.headingMode.addEventListener('change', () => {
@@ -193,6 +205,30 @@ function wireEvents() {
   els.removePoint.addEventListener('click', () => removeSelected());
   els.fitView.addEventListener('click', () => {
     state.canvas?.fit();
+  });
+
+  // Flight parameters are part of the document, so a committed change to one
+  // is undoable. The model updates on every keystroke (validation stays live);
+  // only the committed value becomes a history entry.
+  for (const input of [els.altitude, els.speed, els.fixedHeading, els.name]) {
+    input.addEventListener('change', () => commit(`Change ${input.id.replace(/-/g, ' ')}`));
+  }
+  els.altitudeRef.addEventListener('change', () => commit('Change altitude reference'));
+  els.headingMode.addEventListener('change', () => commit('Change heading mode'));
+
+  attachHistoryControls({
+    history: state.history,
+    undoButton: els.undo,
+    redoButton: els.redo,
+    apply: (snapshot, direction, label) => {
+      restoreSnapshot(snapshot);
+      refresh({ rebuildTable: true });
+      setStatus(
+        els.status,
+        `${direction === 'undo' ? 'Undid' : 'Redid'}: ${label ?? 'the last change'}.`,
+        'info'
+      );
+    },
   });
 
   els.siteSource.addEventListener('change', () => onSiteSourceChanged());
@@ -386,7 +422,12 @@ function initCanvas() {
       // validation panel are rebuilt once the drag ends.
       drawCanvas({ fit: false });
     },
-    onPointDragEnd: () => refresh({ rebuildTable: true, fitCanvas: false }),
+    onPointDragEnd: (index) => {
+      // One entry per gesture. The intermediate positions were never pushed,
+      // so there is nothing to coalesce away here.
+      commit(`Move control point ${index}`);
+      refresh({ rebuildTable: true, fitCanvas: false });
+    },
     onCursorMove: (enu) => {
       els.cursorReadout.textContent =
         enu === null
@@ -394,6 +435,57 @@ function initCanvas() {
           : `E ${enu.east_m.toFixed(1)} m  N ${enu.north_m.toFixed(1)} m`;
     },
   });
+}
+
+/**
+ * Everything an undo has to restore.
+ *
+ * The flight parameters live in the DOM rather than in `state`, so they are
+ * read out here; restoring writes them back. Keeping the snapshot explicit (as
+ * opposed to cloning `state`) also documents exactly what is and is not
+ * undoable.
+ *
+ * @returns {object}
+ */
+function snapshot() {
+  return {
+    points: state.points.map((point) => ({ ...point })),
+    closed: state.closed,
+    selectedIndex: state.selectedIndex,
+    name: els.name.value,
+    altitude: els.altitude.value,
+    altitudeReference: els.altitudeRef.value,
+    speed: els.speed.value,
+    headingMode: els.headingMode.value,
+    fixedHeading: els.fixedHeading.value,
+    preset: els.presetSelect.value,
+  };
+}
+
+/** @param {object} snap */
+function restoreSnapshot(snap) {
+  state.points = snap.points.map((point) => ({ ...point }));
+  state.closed = snap.closed;
+  state.selectedIndex = snap.selectedIndex;
+  els.name.value = snap.name;
+  els.altitude.value = snap.altitude;
+  els.altitudeRef.value = snap.altitudeReference;
+  els.speed.value = snap.speed;
+  els.headingMode.value = snap.headingMode;
+  els.fixedHeading.value = snap.fixedHeading;
+  els.presetSelect.value = snap.preset;
+  els.closed.checked = snap.closed;
+  els.fixedHeadingField.hidden = snap.headingMode !== 'fixed';
+  updatePresetVisibility();
+}
+
+/**
+ * Record the current editable state as one undoable operation.
+ * @param {string} label
+ * @param {{coalesceKey?: string}} [options]
+ */
+function commit(label, options = {}) {
+  state.history.push(snapshot(), label, options);
 }
 
 function updatePresetVisibility() {
@@ -416,6 +508,7 @@ function generateFromPreset({ announce }) {
     state.closed = closed;
     state.selectedIndex = null;
     els.closed.checked = closed;
+    commit(`Replace points with ${preset} preset`);
     refresh({ rebuildTable: true, fitCanvas: true });
     if (announce) {
       setStatus(els.status, `Generated ${points.length} control points (${preset}).`, 'ok');
@@ -489,6 +582,7 @@ function insertAfterSelected() {
 
   state.points.splice(index + 1, 0, inserted);
   state.selectedIndex = index + 1;
+  commit(`Insert control point ${index + 1}`);
   refresh({ rebuildTable: true });
   setStatus(els.status, `Inserted control point at index ${index + 1}.`, 'ok');
 }
@@ -505,6 +599,7 @@ function removeSelected() {
   const removed = state.selectedIndex;
   state.points.splice(removed, 1);
   state.selectedIndex = Math.min(removed, state.points.length - 1);
+  commit(`Remove control point ${removed}`);
   refresh({ rebuildTable: true });
   setStatus(els.status, `Removed control point ${removed}.`, 'ok');
 }
@@ -734,6 +829,7 @@ function numberCell(value, apply) {
     input.setCustomValidity('');
     apply(parsed);
   });
+  input.addEventListener('change', () => commit('Edit control point'));
   input.addEventListener('click', (event) => event.stopPropagation());
   return input;
 }
