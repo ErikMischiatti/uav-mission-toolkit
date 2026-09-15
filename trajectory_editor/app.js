@@ -32,13 +32,17 @@ import {
   el,
   formatDuration,
   formatMeters,
+  helpFor,
   installGlobalErrorHandlers,
   must,
   numberToInput,
   readNumberInput,
   renderFindings,
+  renderVerdict,
   reportError,
+  setContext,
   setStatus,
+  summarizeFindings,
 } from '../shared/js/ui.js';
 import { TrajectoryCanvas } from './canvas.js';
 import { buildPreset } from './presets.js';
@@ -69,6 +73,7 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   cacheElements();
   installGlobalErrorHandlers(els.status);
+  installHelp();
   fillAltitudeReferenceSelect();
   wireEvents();
   initCanvas();
@@ -108,6 +113,16 @@ function cacheElements() {
   els.canvas = must('#canvas');
   els.fitView = must('#fit-view');
   els.cursorReadout = must('#cursor-readout');
+
+  els.ctxFrame = must('#ctx-frame');
+  els.ctxAltitude = must('#ctx-altitude');
+  els.ctxVerdict = must('#ctx-verdict');
+}
+
+/** Attach the `?` explanations for the jargon this tool cannot avoid. */
+function installHelp() {
+  must('#help-altref').append(helpFor('AGL'));
+  must('#help-heading').append(helpFor('heading'));
 }
 
 function fillAltitudeReferenceSelect() {
@@ -530,11 +545,35 @@ function renderMetrics() {
   );
 }
 
+/**
+ * Re-render validation, the context bar and the export buttons.
+ *
+ * The export buttons reflect the verdict rather than failing on click: a
+ * disabled button that says why is a better answer than a button that looks
+ * ready and then refuses.
+ */
 function renderValidation() {
-  const { findings } = buildDocumentOrFindings();
+  const { document: document_, findings } = buildDocumentOrFindings();
+  const exportable = document_ !== null && !hasErrors(findings);
+
   renderFindings(els.validation, findings, {
-    emptyMessage: 'The trajectory is complete and satisfies every rule in shared/js/validation.js.',
+    emptyMessage: 'No findings. The trajectory is complete and internally consistent.',
   });
+  renderVerdict(els.ctxVerdict, summarizeFindings(findings));
+
+  const altitude = readNumberInput(els.altitude);
+  const reference = els.altitudeRef.value;
+  setContext(
+    els.ctxAltitude,
+    altitude === null ? null : `${altitude} m ${reference || '(reference not set)'}`
+  );
+
+  for (const button of [els.downloadJson, els.downloadCsv]) {
+    button.disabled = !exportable;
+    button.title = exportable
+      ? ''
+      : 'Export is blocked while the trajectory has validation errors. See the Validation panel.';
+  }
 }
 
 // --- export -----------------------------------------------------------------

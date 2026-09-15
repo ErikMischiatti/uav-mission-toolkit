@@ -28,7 +28,6 @@ import {
   LOCAL_FRAME_TYPES,
   SITE_SCHEMA_VERSION,
   hasErrors,
-  severityCounts,
   siteStatistics,
   validateSite,
 } from '../shared/js/validation.js';
@@ -40,13 +39,17 @@ import {
   formatArea,
   formatLatLon,
   formatMeters,
+  helpFor,
   installGlobalErrorHandlers,
   must,
   numberToInput,
   readNumberInput,
   renderFindings,
+  renderVerdict,
   reportError,
+  setContext,
   setStatus,
+  summarizeFindings,
 } from '../shared/js/ui.js';
 
 /** Example index. The toolkit never scrapes an HTTP directory listing. */
@@ -69,6 +72,7 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   cacheElements();
   installGlobalErrorHandlers(els.status);
+  installHelp();
   populateSelects();
   wireEvents();
   initMap();
@@ -77,7 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function cacheElements() {
   els.status = must('#status');
-  els.sourceLabel = must('#source-label');
   els.loadDemo = must('#load-demo');
   els.downloadSite = must('#download-site');
   els.siteFile = must('#site-file');
@@ -98,10 +101,25 @@ function cacheElements() {
   els.missionRows = must('#mission-rows');
   els.addMissionPoint = must('#add-mission-point');
 
-  els.validationCounts = must('#validation-counts');
   els.validation = must('#validation');
   els.statistics = must('#statistics');
   els.map = must('#map');
+  els.fitView = must('#fit-view');
+
+  els.ctxSource = must('#ctx-source');
+  els.ctxFrame = must('#ctx-frame');
+  els.ctxAltRef = must('#ctx-altref');
+  els.ctxVerdict = must('#ctx-verdict');
+}
+
+/**
+ * Attach the `?` explanations for the jargon this tool cannot avoid. The text
+ * lives in shared/js/ui.js so every tool defines ENU and AGL the same way.
+ */
+function installHelp() {
+  must('#help-enu').append(helpFor('ENU'));
+  must('#help-heading').append(helpFor('heading'));
+  must('#help-altref').append(helpFor('AGL'));
 }
 
 function populateSelects() {
@@ -175,6 +193,7 @@ function wireEvents() {
   els.addMissionPoint.addEventListener('click', () => {
     if (state.site !== null) addMissionPoint();
   });
+  els.fitView.addEventListener('click', () => state.mapView?.fit());
 }
 
 /**
@@ -231,7 +250,7 @@ function adoptSite(site, sourceLabel) {
   }
   state.site = ensureContainers(site);
   state.sourceLabel = sourceLabel;
-  els.sourceLabel.textContent = sourceLabel;
+  setContext(els.ctxSource, sourceLabel);
   renderFields();
   refresh({ rebuildTables: true, fitMap: true });
 
@@ -327,8 +346,11 @@ function renderVertexTable() {
 
     const remove = el('button', {
       type: 'button',
-      class: 'danger',
-      text: 'Remove',
+      class: 'quiet row-remove',
+      text: '\u00d7',
+      // The visible label is a glyph to keep the table narrow, so the
+      // accessible name has to carry the meaning instead.
+      'aria-label': `Remove vertex ${index}`,
       title: ring.length <= MIN_POLYGON_VERTICES
         ? `A polygon needs at least ${MIN_POLYGON_VERTICES} vertices.`
         : `Remove vertex ${index}`,
@@ -345,7 +367,9 @@ function renderVertexTable() {
 
   if (ring.length === 0) {
     els.vertexRows.append(
-      el('tr', {}, [el('td', { colspan: '4', text: 'No vertices defined.' })])
+      el('tr', {}, [
+        el('td', { colspan: '4', class: 'is-empty', text: 'No vertices yet — add at least three.' }),
+      ])
     );
   }
 }
@@ -398,8 +422,9 @@ function renderMissionTable() {
     row.append(el('td', {}, [
       el('button', {
         type: 'button',
-        class: 'danger',
-        text: 'Remove',
+        class: 'quiet row-remove',
+        text: '\u00d7',
+        'aria-label': `Remove mission point ${point.id ?? index}`,
         title: `Remove mission point ${point.id ?? index}`,
         onClick: () => {
           points.splice(index, 1);
@@ -413,7 +438,9 @@ function renderMissionTable() {
 
   if (points.length === 0) {
     els.missionRows.append(
-      el('tr', {}, [el('td', { colspan: '7', text: 'No mission points defined.' })])
+      el('tr', {}, [
+        el('td', { colspan: '7', class: 'is-empty', text: 'No mission points defined.' }),
+      ])
     );
   }
 }
@@ -435,20 +462,24 @@ function numberCell(value, apply) {
   return input;
 }
 
+/**
+ * Re-render validation, the context bar verdict, and the frame/altitude context.
+ *
+ * The verdict is duplicated into the context bar so that the answer to "is this
+ * file safe to export?" is visible without scrolling the sidebar to the
+ * validation panel.
+ */
 function renderValidation() {
   const findings = validateSite(state.site);
-  const counts = severityCounts(findings);
 
-  clear(els.validationCounts);
-  els.validationCounts.append(
-    el('span', { text: `${counts.error} error(s)` }),
-    el('span', { text: `${counts.warning} warning(s)` }),
-    el('span', { text: `${counts.info} note(s)` })
-  );
-
+  renderVerdict(els.ctxVerdict, summarizeFindings(findings, { idle: state.site === null }));
   renderFindings(els.validation, findings, {
-    emptyMessage: 'The site definition satisfies every rule in shared/js/validation.js.',
+    emptyMessage: 'No findings. Every rule in shared/js/validation.js passes.',
   });
+
+  const frame = state.site?.local_frame?.type;
+  setContext(els.ctxFrame, frame ? `${frame} · metres` : null);
+  setContext(els.ctxAltRef, state.site?.safety_area?.altitude_reference ?? null);
 }
 
 function renderStatistics() {

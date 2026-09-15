@@ -10,12 +10,7 @@
 import { enuToGeodetic, polygonPerimeterM } from '../shared/js/geo.js';
 import { fetchJson, parseJson, readFileAsText } from '../shared/js/io.js';
 import { SiteMapView } from '../shared/js/site_map.js';
-import {
-  hasErrors,
-  severityCounts,
-  siteStatistics,
-  validateSite,
-} from '../shared/js/validation.js';
+import { hasErrors, siteStatistics, validateSite } from '../shared/js/validation.js';
 import {
   NO_VALUE,
   clear,
@@ -27,8 +22,11 @@ import {
   installGlobalErrorHandlers,
   must,
   renderFindings,
+  renderVerdict,
   reportError,
+  setContext,
   setStatus,
+  summarizeFindings,
 } from '../shared/js/ui.js';
 
 const MANIFEST_URL = '../examples/manifest.json';
@@ -56,16 +54,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function cacheElements() {
   els.status = must('#status');
-  els.sourceLabel = must('#source-label');
   els.exampleSelect = must('#example-select');
   els.loadExample = must('#load-example');
   els.siteFile = must('#site-file');
   els.siteSummary = must('#site-summary');
   els.statistics = must('#statistics');
-  els.validationCounts = must('#validation-counts');
   els.validation = must('#validation');
   els.missionRows = must('#mission-rows');
   els.map = must('#map');
+  els.fitView = must('#fit-view');
+
+  els.ctxSource = must('#ctx-source');
+  els.ctxFrame = must('#ctx-frame');
+  els.ctxAltRef = must('#ctx-altref');
+  els.ctxVerdict = must('#ctx-verdict');
 }
 
 function wireEvents() {
@@ -74,6 +76,7 @@ function wireEvents() {
     const [file] = event.target.files ?? [];
     if (file) loadSiteFromFile(file);
   });
+  els.fitView.addEventListener('click', () => state.mapView?.fit());
 }
 
 function initMap() {
@@ -152,7 +155,12 @@ function adoptSite(site, sourceLabel) {
     throw new Error(`"${sourceLabel}" does not contain a site object.`);
   }
   state.site = site;
-  els.sourceLabel.textContent = sourceLabel;
+  setContext(els.ctxSource, sourceLabel);
+  setContext(
+    els.ctxFrame,
+    site.local_frame?.type ? `${site.local_frame.type} · metres` : null
+  );
+  setContext(els.ctxAltRef, site.safety_area?.altitude_reference ?? null);
 
   const findings = validateSite(site);
   renderSummary(site);
@@ -245,15 +253,9 @@ function renderStatistics(site) {
 }
 
 function renderValidation(findings) {
-  const counts = severityCounts(findings);
-  clear(els.validationCounts);
-  els.validationCounts.append(
-    el('span', { text: `${counts.error} error(s)` }),
-    el('span', { text: `${counts.warning} warning(s)` }),
-    el('span', { text: `${counts.info} note(s)` })
-  );
+  renderVerdict(els.ctxVerdict, summarizeFindings(findings, { idle: state.site === null }));
   renderFindings(els.validation, findings, {
-    emptyMessage: 'The site definition satisfies every rule in shared/js/validation.js.',
+    emptyMessage: 'No findings. Every rule in shared/js/validation.js passes.',
   });
 }
 
@@ -262,7 +264,9 @@ function renderMissionTable(site) {
   const points = Array.isArray(site.mission_points) ? site.mission_points : [];
   if (points.length === 0) {
     els.missionRows.append(
-      el('tr', {}, [el('td', { colspan: '8', text: 'No mission points defined.' })])
+      el('tr', {}, [
+        el('td', { colspan: '8', class: 'is-empty', text: 'No mission points defined.' }),
+      ])
     );
     return;
   }

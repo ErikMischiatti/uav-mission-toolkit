@@ -9,7 +9,7 @@
 
 import { enuToGeodetic, geodeticToEnu } from './geo.js';
 import { roundTo } from './io.js';
-import { ensureLeaflet } from './ui.js';
+import { cssToken, ensureLeaflet } from './ui.js';
 
 /**
  * Pinned tile source. Leaflet itself is vendored and works offline; the tiles
@@ -33,12 +33,20 @@ const FALLBACK_ZOOM = 17;
 /** Padding applied when fitting the map to the site geometry, in pixels. */
 const FIT_PADDING_PX = 32;
 
-const POLYGON_STYLE = Object.freeze({
-  color: '#c2410c',
-  weight: 2,
-  fillColor: '#f97316',
-  fillOpacity: 0.08,
-});
+/**
+ * Geometry colours come from the design tokens in shared/css/common.css rather
+ * than being duplicated here, so the map follows the light/dark theme and there
+ * is only one palette to keep distinguishable. Leaflet needs real colour
+ * strings, hence the lookup instead of a CSS variable.
+ */
+function polygonStyle() {
+  return {
+    color: cssToken('--geo-safety', '#c2410c'),
+    weight: 2,
+    fillColor: cssToken('--geo-safety-fill', '#f97316'),
+    fillOpacity: 0.1,
+  };
+}
 
 export class SiteMapView {
   /**
@@ -196,10 +204,10 @@ export class SiteMapView {
 
   #renderOrigin(originLatLng) {
     this.L.circleMarker(originLatLng, {
-      radius: 7,
-      color: '#0f172a',
+      radius: 6,
+      color: '#ffffff',
       weight: 2,
-      fillColor: '#38bdf8',
+      fillColor: cssToken('--geo-origin', '#0b7285'),
       fillOpacity: 1,
     })
       .bindTooltip('Origin (E 0 m, N 0 m)', { direction: 'top' })
@@ -218,7 +226,7 @@ export class SiteMapView {
     }
     this.geometryLatLngs.push(...latLngs);
 
-    const polygon = this.L.polygon(latLngs, POLYGON_STYLE).addTo(this.overlay);
+    const polygon = this.L.polygon(latLngs, polygonStyle()).addTo(this.overlay);
     polygon.bindTooltip('Safety area', { sticky: true });
 
     if (!this.options.editable || !this.options.onVertexMoved) return;
@@ -285,7 +293,7 @@ export class SiteMapView {
 
     if (pathLatLngs.length >= 2) {
       this.L.polyline(pathLatLngs, {
-        color: '#2563eb',
+        color: cssToken('--geo-point', '#2563eb'),
         weight: 1.5,
         dashArray: '6 4',
         interactive: false,

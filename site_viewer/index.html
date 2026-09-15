@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="../shared/favicon.svg" type="image/svg+xml" />
     <title>Site Viewer &middot; UAV Mission Toolkit</title>
     <meta
       name="description"
@@ -19,17 +20,36 @@
     <link rel="stylesheet" href="../shared/css/common.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="tool">
     <header class="app-header">
+      <a class="app-header__brand" href="../index.html">UAV Mission Toolkit</a>
+      <span class="app-header__divider" aria-hidden="true"></span>
       <h1>Site Viewer</h1>
-      <p class="app-header__subtitle">Read-only sanity check for a site definition.</p>
-      <nav>
-        <a href="../index.html">Toolkit</a>
-        <a href="../site_editor/index.html">Editor</a>
+      <p class="app-header__subtitle">Read-only inspection. Nothing on this page changes the file.</p>
+      <nav aria-label="Tools">
+        <a href="../site_editor/index.html">Site Editor</a>
         <a href="../trajectory_editor/index.html">Trajectory</a>
         <a href="../altitude_sweep/index.html">Altitude sweep</a>
+        <a href="../site_viewer/index.html" aria-current="page">Viewer</a>
       </nav>
     </header>
+
+    <div class="context-bar">
+      <div class="context">
+        <span class="context__label">Site</span>
+        <span id="ctx-source" class="context__value context__value--muted">nothing loaded</span>
+      </div>
+      <div class="context">
+        <span class="context__label">Frame</span>
+        <span id="ctx-frame" class="context__value context__value--muted">not set</span>
+      </div>
+      <div class="context">
+        <span class="context__label">Altitude ref</span>
+        <span id="ctx-altref" class="context__value context__value--muted">not set</span>
+      </div>
+      <div class="context-bar__spacer"></div>
+      <span id="ctx-verdict" class="verdict verdict--idle">Nothing loaded</span>
+    </div>
 
     <noscript>
       <p class="status status--error" style="margin: 16px">
@@ -39,8 +59,6 @@
 
     <main class="tool-layout">
       <div class="sidebar">
-        <p id="status" class="status status--info">Loading&hellip;</p>
-
         <section class="panel">
           <h2>Site file</h2>
           <div class="field">
@@ -50,13 +68,15 @@
           <div class="button-row">
             <button id="load-example" type="button" class="primary">Load example</button>
           </div>
-          <div class="field" style="margin-top: 12px">
+          <div class="field" style="margin-top: var(--space-3)">
             <label for="site-file">Open a local site.json</label>
             <input id="site-file" type="file" accept="application/json,.json" />
           </div>
-          <p class="panel__hint">
-            Loaded from: <span id="source-label" class="mono">nothing yet</span>
-          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Validation</h2>
+          <div id="validation"></div>
         </section>
 
         <section class="panel">
@@ -64,47 +84,58 @@
           <div id="site-summary"></div>
         </section>
 
-        <section class="panel">
-          <h2>Dimensions</h2>
+        <details class="panel" open>
+          <summary>Dimensions</summary>
           <div id="statistics"></div>
-        </section>
+        </details>
 
-        <section class="panel">
-          <h2>Validation</h2>
-          <div id="validation-counts" class="summary-counts"></div>
-          <div id="validation"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Mission points</h2>
+        <details class="panel" open>
+          <summary>Mission points</summary>
           <div class="table-scroll">
             <table class="data">
               <thead>
                 <tr>
-                  <th>id</th>
-                  <th class="num">east_m</th>
-                  <th class="num">north_m</th>
-                  <th class="num">alt_m</th>
-                  <th>alt ref</th>
-                  <th class="num">hdg</th>
-                  <th class="num">latitude</th>
-                  <th class="num">longitude</th>
+                  <th scope="col">id</th>
+                  <th scope="col" class="num">east_m</th>
+                  <th scope="col" class="num">north_m</th>
+                  <th scope="col" class="num">alt_m</th>
+                  <th scope="col">alt ref</th>
+                  <th scope="col" class="num">hdg</th>
+                  <th scope="col" class="num">latitude</th>
+                  <th scope="col" class="num">longitude</th>
                 </tr>
               </thead>
               <tbody id="mission-rows"></tbody>
             </table>
           </div>
-        </section>
+        </details>
       </div>
 
       <div class="workspace">
-        <div id="map" class="map" role="application" aria-label="Site map"></div>
-        <p class="panel__hint">
-          This view never modifies the loaded file. To change a site, use the
-          <a href="../site_editor/index.html">Site Editor</a>.
-        </p>
+        <div class="workspace-toolbar">
+          <button id="fit-view" type="button" class="quiet">Fit view</button>
+          <div class="workspace-toolbar__spacer"></div>
+          <div class="legend">
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-safety)"></span>Safety area
+            </span>
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-point)"></span>Mission point
+            </span>
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-origin)"></span>Origin
+            </span>
+          </div>
+        </div>
+        <div class="workspace__canvas">
+          <div id="map" class="map" role="application" aria-label="Site map"></div>
+        </div>
       </div>
     </main>
+
+    <div class="app-statusbar">
+      <p id="status" class="status status--info">Loading&hellip;</p>
+    </div>
 
     <script type="module" src="app.js"></script>
   </body>

@@ -1,34 +1,46 @@
-/* Site editor specific styling. Everything structural lives in shared/css/common.css. */
+/* Site editor specifics. Everything structural lives in shared/css/common.css. */
 
-/* The vertex and mission tables carry a lot of narrow numeric inputs. */
-#vertex-rows input,
-#mission-rows input {
-  min-width: 68px;
+/*
+ * The vertex and mission tables carry a lot of narrow numeric inputs in a
+ * sidebar that is only ~400 px wide. Widths are set per column rather than
+ * globally so the id column can breathe while the numbers stay compact, and so
+ * the whole table still fits without a horizontal scrollbar at the default
+ * sidebar width.
+ */
+#vertex-rows input {
+  min-width: 64px;
+}
+
+#mission-rows input[type="number"] {
+  min-width: 52px;
 }
 
 #mission-rows input[type="text"] {
-  min-width: 96px;
+  min-width: 80px;
 }
 
 #mission-rows select {
-  min-width: 78px;
+  min-width: 62px;
+  padding-right: 0;
 }
 
-/* Shown instead of the map when Leaflet could not be loaded. */
-.map--unavailable {
-  align-items: center;
-  color: var(--error);
-  display: flex;
-  font-size: 13px;
-  justify-content: center;
-  padding: var(--space-5);
-  text-align: center;
+/* The per-row remove control is an icon-sized quiet button with a real name
+   for screen readers; a full "Remove" label per row would dominate the table. */
+.row-remove {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
 }
 
-/* Keep the map visible while the long sidebar scrolls next to it. */
-@media (min-width: 901px) {
-  .workspace {
-    position: sticky;
-    top: var(--space-4);
-  }
+.row-remove:hover:not(:disabled) {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* The mission-point row whose marker is selected on the map. */
+#mission-rows tr.is-selected td,
+#vertex-rows tr.is-selected td {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
 }

@@ -1,41 +1,43 @@
-/* Altitude sweep specific styling: variant table badges and the preview. */
+/* Altitude sweep specifics: variant badges and the preview. Structure lives in common.css. */
 
+/*
+ * A verification badge. It carries a word as well as a colour, because
+ * "verified" and "failed" is exactly the distinction that must not depend on
+ * the reader being able to tell green from red.
+ */
 .badge {
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 11px;
-  padding: 1px 8px;
+  font-weight: 600;
+  padding: 1px var(--space-2);
   white-space: nowrap;
 }
 
 .badge--ok {
-  background: var(--ok-bg);
-  color: var(--ok);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success);
 }
 
 .badge--error {
-  background: var(--error-bg);
-  color: var(--error);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 #variant-rows tr {
   cursor: pointer;
 }
 
-#variant-rows tr.is-selected td {
-  background: var(--info-bg);
-}
-
-/* The one column a sweep is allowed to change. */
+/* The one column a sweep is allowed to change, marked in every preview row. */
 .cell--changed {
   background: var(--warning-bg);
   color: var(--warning);
+  font-weight: 600;
 }
 
 #preview-rows td {
   font-family: var(--font-mono);
   font-size: 11px;
-}
-
-#preview-label {
-  margin-bottom: var(--space-2);
 }

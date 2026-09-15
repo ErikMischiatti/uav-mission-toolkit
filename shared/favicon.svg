@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="UAV Mission Toolkit">
+  <title>UAV Mission Toolkit</title>
+  <!--
+    The toolkit's mark: a safety polygon with the site origin at its centre.
+    Deliberately monochrome apart from the origin dot, so it stays legible at
+    16 px and against either a light or a dark browser chrome.
+  -->
+  <rect width="32" height="32" rx="5" fill="#14171c" />
+  <path
+    d="M6 12 L16 5 L26 12 L23 25 L9 25 Z"
+    fill="none"
+    stroke="#6ea0ff"
+    stroke-width="2"
+    stroke-linejoin="round"
+  />
+  <circle cx="16" cy="17" r="3" fill="#4dd0e1" />
+</svg>

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="../shared/favicon.svg" type="image/svg+xml" />
     <title>Site Editor &middot; UAV Mission Toolkit</title>
     <meta
       name="description"
@@ -19,17 +20,37 @@
     <link rel="stylesheet" href="../shared/css/common.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="tool">
     <header class="app-header">
+      <a class="app-header__brand" href="../index.html">UAV Mission Toolkit</a>
+      <span class="app-header__divider" aria-hidden="true"></span>
       <h1>Site Editor</h1>
-      <p class="app-header__subtitle">Define origin, safety area, altitude limits and mission points.</p>
-      <nav>
-        <a href="../index.html">Toolkit</a>
-        <a href="../site_viewer/index.html">Viewer</a>
+      <p class="app-header__subtitle">Define the operating area a mission is flown in.</p>
+      <nav aria-label="Tools">
+        <a href="../site_editor/index.html" aria-current="page">Site Editor</a>
         <a href="../trajectory_editor/index.html">Trajectory</a>
         <a href="../altitude_sweep/index.html">Altitude sweep</a>
+        <a href="../site_viewer/index.html">Viewer</a>
       </nav>
     </header>
+
+    <div class="context-bar">
+      <div class="context">
+        <span class="context__label">Site</span>
+        <span id="ctx-source" class="context__value context__value--muted">nothing loaded</span>
+        <span id="ctx-dirty" class="dirty-dot" title="Unsaved changes" hidden></span>
+      </div>
+      <div class="context">
+        <span class="context__label">Frame</span>
+        <span id="ctx-frame" class="context__value context__value--muted">not set</span>
+      </div>
+      <div class="context">
+        <span class="context__label">Altitude ref</span>
+        <span id="ctx-altref" class="context__value context__value--muted">not set</span>
+      </div>
+      <div class="context-bar__spacer"></div>
+      <span id="ctx-verdict" class="verdict verdict--idle">Nothing loaded</span>
+    </div>
 
     <noscript>
       <p class="status status--error" style="margin: 16px">
@@ -39,21 +60,16 @@
 
     <main class="tool-layout tool-layout--wide-sidebar">
       <div class="sidebar">
-        <p id="status" class="status status--info">Loading&hellip;</p>
-
         <section class="panel">
           <h2>Site file</h2>
           <div class="button-row">
-            <button id="load-demo" type="button" class="primary">Load demo site</button>
-            <button id="download-site" type="button">Download site.json</button>
+            <button id="download-site" type="button" class="primary">Export site.json</button>
+            <button id="load-demo" type="button">Load demo site</button>
           </div>
-          <div class="field" style="margin-top: 12px">
+          <div class="field" style="margin-top: var(--space-3)">
             <label for="site-file">Open a local site.json</label>
             <input id="site-file" type="file" accept="application/json,.json" />
           </div>
-          <p class="panel__hint">
-            Loaded from: <span id="source-label" class="mono">nothing yet</span>
-          </p>
         </section>
 
         <section class="panel">
@@ -64,70 +80,81 @@
           </div>
           <div class="field-grid">
             <div class="field">
-              <label for="origin-lat">Latitude (deg, WGS84)</label>
-              <input id="origin-lat" type="number" step="0.0000001" min="-90" max="90" />
+              <label for="origin-lat">Latitude, WGS84</label>
+              <div class="input-unit">
+                <input id="origin-lat" type="number" step="0.0000001" min="-90" max="90" />
+                <span class="input-unit__suffix">deg</span>
+              </div>
             </div>
             <div class="field">
-              <label for="origin-lon">Longitude (deg, WGS84)</label>
-              <input id="origin-lon" type="number" step="0.0000001" min="-180" max="180" />
+              <label for="origin-lon">Longitude, WGS84</label>
+              <div class="input-unit">
+                <input id="origin-lon" type="number" step="0.0000001" min="-180" max="180" />
+                <span class="input-unit__suffix">deg</span>
+              </div>
             </div>
           </div>
           <div class="field">
-            <label for="origin-alt">Origin altitude (m AMSL)</label>
-            <input id="origin-alt" type="number" step="0.1" />
+            <label for="origin-alt">Origin altitude</label>
+            <div class="input-unit">
+              <input id="origin-alt" type="number" step="any" />
+              <span class="input-unit__suffix">m AMSL</span>
+            </div>
           </div>
           <div class="field-grid">
             <div class="field">
-              <label for="frame-type">Local frame type</label>
+              <label for="frame-type">Local frame <span id="help-enu"></span></label>
               <select id="frame-type"></select>
             </div>
             <div class="field">
-              <label for="frame-heading-ref">Heading reference</label>
+              <label for="frame-heading-ref">Heading reference <span id="help-heading"></span></label>
               <select id="frame-heading-ref"></select>
             </div>
           </div>
-          <p class="panel__hint">
-            v0.1 supports ENU (east / north / up) with headings in degrees clockwise from true
-            north. See <a href="../docs/coordinate_frames.md">docs/coordinate_frames.md</a>.
-          </p>
         </section>
 
         <section class="panel">
           <h2>Safety area</h2>
-          <div class="field-grid--three field-grid">
+          <div class="field-grid field-grid--three">
             <div class="field">
-              <label for="min-alt">Min altitude (m)</label>
-              <input id="min-alt" type="number" step="1" />
+              <label for="min-alt">Min altitude</label>
+              <div class="input-unit">
+                <input id="min-alt" type="number" step="any" />
+                <span class="input-unit__suffix">m</span>
+              </div>
             </div>
             <div class="field">
-              <label for="max-alt">Max altitude (m)</label>
-              <input id="max-alt" type="number" step="1" />
+              <label for="max-alt">Max altitude</label>
+              <div class="input-unit">
+                <input id="max-alt" type="number" step="any" />
+                <span class="input-unit__suffix">m</span>
+              </div>
             </div>
             <div class="field">
-              <label for="alt-ref">Altitude reference</label>
+              <label for="alt-ref">Altitude reference <span id="help-altref"></span></label>
               <select id="alt-ref"></select>
             </div>
           </div>
 
-          <h3>Polygon vertices (local ENU, metres)</h3>
+          <h3>Polygon vertices <span class="text-muted">(local ENU, metres)</span></h3>
           <div class="table-scroll">
             <table class="data">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th class="num">east_m</th>
-                  <th class="num">north_m</th>
-                  <th></th>
+                  <th scope="col">#</th>
+                  <th scope="col" class="num">east_m</th>
+                  <th scope="col" class="num">north_m</th>
+                  <th scope="col"><span class="visually-hidden">Actions</span></th>
                 </tr>
               </thead>
               <tbody id="vertex-rows"></tbody>
             </table>
           </div>
-          <div class="button-row" style="margin-top: 8px">
+          <div class="button-row" style="margin-top: var(--space-2)">
             <button id="add-vertex" type="button">Add vertex</button>
           </div>
           <p class="panel__hint">
-            Vertices can also be dragged directly on the map. The ring is closed implicitly.
+            Vertices can also be dragged on the map. The ring closes implicitly.
           </p>
         </section>
 
@@ -137,48 +164,63 @@
             <table class="data">
               <thead>
                 <tr>
-                  <th>id</th>
-                  <th class="num">east_m</th>
-                  <th class="num">north_m</th>
-                  <th class="num">alt_m</th>
-                  <th>alt ref</th>
-                  <th class="num">hdg</th>
-                  <th></th>
+                  <th scope="col">id</th>
+                  <th scope="col" class="num">east_m</th>
+                  <th scope="col" class="num">north_m</th>
+                  <th scope="col" class="num">alt_m</th>
+                  <th scope="col">alt ref</th>
+                  <th scope="col" class="num">hdg</th>
+                  <th scope="col"><span class="visually-hidden">Actions</span></th>
                 </tr>
               </thead>
               <tbody id="mission-rows"></tbody>
             </table>
           </div>
-          <div class="button-row" style="margin-top: 8px">
+          <div class="button-row" style="margin-top: var(--space-2)">
             <button id="add-mission-point" type="button">Add mission point</button>
           </div>
           <p class="panel__hint">
-            A new point is created without an altitude on purpose: the toolkit never invents a
-            safety-critical value. Leave the heading empty to record it as unspecified.
+            A new point has no altitude on purpose: the toolkit never invents a safety-critical
+            value. An empty heading is recorded as unspecified.
           </p>
         </section>
 
         <section class="panel">
           <h2>Validation</h2>
-          <div id="validation-counts" class="summary-counts"></div>
           <div id="validation"></div>
         </section>
 
-        <section class="panel">
-          <h2>Statistics</h2>
+        <details class="panel" id="statistics-panel">
+          <summary>Statistics</summary>
           <div id="statistics"></div>
-        </section>
+        </details>
       </div>
 
       <div class="workspace">
-        <div id="map" class="map" role="application" aria-label="Site map"></div>
-        <p class="panel__hint">
-          Drag the blue mission-point markers or the orange polygon handles to edit geometry.
-          Map tiles are fetched from openstreetmap.org and need an internet connection; the
-          overlay geometry renders without them.
-        </p>
+        <div class="workspace-toolbar">
+          <button id="fit-view" type="button" class="quiet">Fit view</button>
+          <div class="workspace-toolbar__spacer"></div>
+          <div class="legend">
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-safety)"></span>Safety area
+            </span>
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-point)"></span>Mission point
+            </span>
+            <span class="legend__item">
+              <span class="legend__swatch" style="background: var(--geo-origin)"></span>Origin
+            </span>
+          </div>
+        </div>
+        <div class="workspace__canvas">
+          <div id="map" class="map" role="application" aria-label="Site map"></div>
+        </div>
       </div>
     </main>
+
+    <div class="app-statusbar">
+      <p id="status" class="status status--info">Loading&hellip;</p>
+    </div>
 
     <script type="module" src="app.js"></script>
   </body>
