@@ -75,7 +75,35 @@ describe('validation: the shipped demo site is valid', (test) => {
 
   test('the demo trajectory validates against the demo site', () => {
     const findings = validateTrajectory(validTrajectory(), { site: demoSite() });
-    assert.deepEqual(findings, [], `unexpected findings: ${JSON.stringify(findings)}`);
+    // The fixture predates site_context, so the one expected finding is the note
+    // saying the file does not record which frame it belongs to. Nothing else.
+    assert.deepEqual(
+      findings.filter((f) => f.severity !== 'info'),
+      [],
+      `unexpected errors or warnings: ${JSON.stringify(findings)}`
+    );
+    assert.deepEqual(findings.map((f) => f.code), ['site_context.absent']);
+  });
+
+  test('a trajectory that records its site context has nothing left to report', () => {
+    const site = demoSite();
+    const trajectory = validTrajectory({
+      site_context: {
+        site_id: site.site_id,
+        site_name: site.name,
+        origin: {
+          latitude_deg: site.origin.latitude_deg,
+          longitude_deg: site.origin.longitude_deg,
+          altitude_amsl_m: site.origin.altitude_amsl_m,
+        },
+        local_frame: { type: 'ENU', heading_reference: 'true_north' },
+      },
+    });
+    assert.deepEqual(
+      validateTrajectory(trajectory, { site }),
+      [],
+      'a fully described trajectory should produce no findings at all'
+    );
   });
 
   test('the vocabularies the format allows are the documented ones', () => {

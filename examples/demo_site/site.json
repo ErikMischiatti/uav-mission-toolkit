@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "name": "demo_site",
+  "site_id": "demo_site",
   "description": "Fictional demo site used for development and documentation. The origin is a round-numbered coordinate chosen because it is obviously synthetic; it does not correspond to any real UAV operating location, and none of the geometry below was derived from a real site.",
   "created_utc": "2026-09-15T00:00:00Z",
   "origin": {

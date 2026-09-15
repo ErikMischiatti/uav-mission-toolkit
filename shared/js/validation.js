@@ -14,6 +14,7 @@ import {
   LOCAL_FRAME_RECOMMENDED_RADIUS_M,
   boundingBox,
   maxRadiusFromOriginM,
+  pathSegmentsLeavingPolygon,
   pointInPolygon,
   polygonAreaM2,
   polygonSelfIntersections,
@@ -119,6 +120,27 @@ export function validateSite(site) {
   // --- name ---
   if (!isNonEmptyString(site.name)) {
     findings.push(error('name.missing', 'Site "name" must be a non-empty string.', 'name'));
+  }
+
+  // --- site id ---
+  // Optional, and deliberately separate from "name": a name is for humans and
+  // may change, while an id is what a trajectory records to say which frame it
+  // was drawn in. Nothing derives an id from a filename.
+  if (site.site_id !== undefined && site.site_id !== null) {
+    if (!isNonEmptyString(site.site_id)) {
+      findings.push(
+        error('site_id.type', 'Site "site_id", when present, must be a non-empty string.', 'site_id')
+      );
+    } else if (!/^[A-Za-z0-9._-]+$/.test(site.site_id)) {
+      findings.push(
+        warn(
+          'site_id.charset',
+          `site_id ${JSON.stringify(site.site_id)} contains characters outside ` +
+            `[A-Za-z0-9._-]. Ids travel through filenames and URLs; keep them plain.`,
+          'site_id'
+        )
+      );
+    }
   }
 
   // --- origin ---
@@ -622,10 +644,11 @@ export function validateTrajectory(trajectory, context = {}) {
     );
   }
 
-  const polygon = Array.isArray(context.site?.safety_area?.horizontal)
-    ? context.site.safety_area.horizontal
+  const site = context.site ?? null;
+  const polygon = Array.isArray(site?.safety_area?.horizontal)
+    ? site.safety_area.horizontal
     : null;
-  const siteAltitudeReference = context.site?.safety_area?.altitude_reference ?? null;
+  const siteAltitudeReference = site?.safety_area?.altitude_reference ?? null;
   let outsideCount = 0;
 
   points.forEach((point, index) => {
@@ -661,27 +684,320 @@ export function validateTrajectory(trajectory, context = {}) {
     }
   });
 
-  if (polygon && outsideCount > 0) {
+  findings.push(
+    ...validateAgainstSite(
+      {
+        points,
+        closed: trajectory.closed,
+        altitudeReference: trajectory.altitude_reference,
+        outsideCount,
+      },
+      site
+    )
+  );
+
+  findings.push(...siteContextFindings(trajectory, site));
+  findings.push(...frameCompatibilityFindings(trajectory, site));
+
+  return findings;
+}
+
+/**
+ * Check a path against a site: containment, segments that leave the area, and
+ * the altitude band.
+ *
+ * Exported separately from {@link validateTrajectory} because the trajectory
+ * editor needs these answers *while the trajectory is still incomplete*. A
+ * user who has not yet chosen an altitude reference should still be told that
+ * their path leaves the safety area — waiting until the document can be
+ * assembled would hide the most important finding behind an unrelated one.
+ * Keeping one implementation means the editor and the file check cannot drift.
+ *
+ * @param {{points: Array<object>, closed: boolean, altitudeReference: string|null,
+ *          outsideCount?: number}} path
+ * @param {object|null} site
+ * @returns {Finding[]}
+ */
+export function validateAgainstSite(path, site) {
+  const findings = [];
+  if (site === null || typeof site !== 'object') return findings;
+
+  const { points, closed, altitudeReference } = path;
+  if (!Array.isArray(points)) return findings;
+
+  const ring = site.safety_area?.horizontal;
+  const polygon = Array.isArray(ring) && ring.length >= 3 ? ring : null;
+  const usable = points.filter(
+    (point) => point && isFiniteNumber(point.east_m) && isFiniteNumber(point.north_m)
+  );
+
+  if (polygon !== null) {
+    const outsideCount =
+      path.outsideCount ??
+      usable.filter((point) => !pointInPolygon(point, polygon)).length;
+
+    if (outsideCount > 0) {
+      findings.push(
+        error(
+          'points.outside_safety_area',
+          `${outsideCount} trajectory point(s) lie outside the safety polygon of the loaded site.`,
+          'points'
+        )
+      );
+    }
+
+    // A leg between two interior points can still cut across a concave notch
+    // and leave the area in between. Checking the waypoints alone misses it.
+    if (typeof closed === 'boolean' && usable.length === points.length) {
+      const crossingOnly = pathSegmentsLeavingPolygon(points, polygon, { closed }).filter(
+        (index) => {
+          const from = points[index];
+          const to = points[(index + 1) % points.length];
+          // Segments with an endpoint already outside are covered above; only
+          // report the ones that would otherwise go unseen.
+          return pointInPolygon(from, polygon) && pointInPolygon(to, polygon);
+        }
+      );
+      if (crossingOnly.length > 0) {
+        findings.push(
+          error(
+            'segments.leave_safety_area',
+            `${crossingOnly.length} path segment(s) leave the safety polygon between their ` +
+              `endpoints (segment${crossingOnly.length === 1 ? '' : 's'} ` +
+              `${crossingOnly.join(', ')}). Both waypoints are inside, but the straight line ` +
+              `between them is not.`,
+            'points'
+          )
+        );
+      }
+    }
+  }
+
+  // --- altitude band, only when the two references agree ---------------------
+  const siteAltitudeReference = site.safety_area?.altitude_reference ?? null;
+  const referenceIsValid = ALTITUDE_REFERENCES.includes(altitudeReference);
+  if (siteAltitudeReference === null || !referenceIsValid) return findings;
+
+  if (altitudeReference !== siteAltitudeReference) {
+    findings.push(
+      warn(
+        'altitude_reference.mismatch',
+        `The trajectory is defined in ${altitudeReference} but the loaded site uses ` +
+          `${siteAltitudeReference}. Altitude limits were not checked: converting between ` +
+          `references needs information this toolkit does not have.`,
+        'altitude_reference'
+      )
+    );
+    return findings;
+  }
+
+  findings.push(...altitudeBandFindings(points, site));
+  return findings;
+}
+
+/**
+ * Check the optional `site_context` block.
+ *
+ * The block is what makes a trajectory self-describing about the frame its
+ * coordinates live in. It is optional — a trajectory drawn in an abstract local
+ * plane legitimately has none — but a present block that is malformed is worse
+ * than an absent one, because it looks authoritative.
+ *
+ * @param {object} trajectory
+ * @param {object|null} site the site being validated against, if any
+ * @returns {Finding[]}
+ */
+function siteContextFindings(trajectory, site) {
+  const findings = [];
+  const context = trajectory.site_context;
+
+  if (context === undefined || context === null) {
+    // Only worth saying when there is a site in play. A trajectory drawn in an
+    // abstract local plane has nothing to record, and a permanent note on every
+    // such file would just train the reader to ignore the panel.
+    if (site !== null && typeof site === 'object') {
+      findings.push(
+        info(
+          'site_context.absent',
+          'This trajectory records no site context, so the file itself does not say which ' +
+            'local frame its coordinates belong to. Exporting it from this tool with a site ' +
+            'selected will add that.',
+          'site_context'
+        )
+      );
+    }
+    return findings;
+  }
+
+  if (typeof context !== 'object' || Array.isArray(context)) {
+    findings.push(
+      error('site_context.type', 'trajectory.site_context must be a JSON object.', 'site_context')
+    );
+    return findings;
+  }
+
+  if (context.site_id !== undefined && !isNonEmptyString(context.site_id)) {
     findings.push(
       error(
-        'points.outside_safety_area',
-        `${outsideCount} trajectory point(s) lie outside the safety polygon of the loaded site.`,
-        'points'
+        'site_context.site_id',
+        'site_context.site_id must be a non-empty string when present.',
+        'site_context.site_id'
       )
     );
   }
 
+  const origin = context.origin;
+  if (origin !== undefined) {
+    if (origin === null || typeof origin !== 'object') {
+      findings.push(
+        error(
+          'site_context.origin.type',
+          'site_context.origin must be an object with latitude_deg and longitude_deg.',
+          'site_context.origin'
+        )
+      );
+    } else {
+      const latOk = isFiniteNumber(origin.latitude_deg) &&
+        origin.latitude_deg >= -90 && origin.latitude_deg <= 90;
+      const lonOk = isFiniteNumber(origin.longitude_deg) &&
+        origin.longitude_deg >= -180 && origin.longitude_deg <= 180;
+      if (!latOk || !lonOk) {
+        findings.push(
+          error(
+            'site_context.origin.range',
+            'site_context.origin must carry a latitude_deg in [-90, 90] and a longitude_deg ' +
+              'in [-180, 180].',
+            'site_context.origin'
+          )
+        );
+      }
+    }
+  }
+
+  const frame = context.local_frame;
+  if (frame !== undefined && frame !== null && typeof frame === 'object') {
+    if (frame.type !== undefined && !LOCAL_FRAME_TYPES.includes(frame.type)) {
+      findings.push(
+        error(
+          'site_context.local_frame.type',
+          `site_context.local_frame.type must be one of ${LOCAL_FRAME_TYPES.join(', ')}, got ` +
+            `${JSON.stringify(frame.type)}.`,
+          'site_context.local_frame.type'
+        )
+      );
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Compare every trajectory altitude against the site's altitude band.
+ *
+ * Only called once the trajectory and the site are known to use the same
+ * altitude reference; comparing an AGL number with an AMSL limit would be
+ * arithmetic without meaning.
+ *
+ * @param {Array<object>} points
+ * @param {object} site
+ * @returns {Finding[]}
+ */
+function altitudeBandFindings(points, site) {
+  const findings = [];
+  const min = site?.safety_area?.min_altitude_m;
+  const max = site?.safety_area?.max_altitude_m;
+  const reference = site?.safety_area?.altitude_reference ?? '';
+  if (!isFiniteNumber(min) || !isFiniteNumber(max)) return findings;
+
+  const below = [];
+  const above = [];
+  points.forEach((point, index) => {
+    if (!point || !isFiniteNumber(point.altitude_m)) return;
+    if (point.altitude_m < min) below.push(index);
+    if (point.altitude_m > max) above.push(index);
+  });
+
+  if (below.length > 0) {
+    findings.push(
+      error(
+        'points.below_site_minimum',
+        `${below.length} trajectory point(s) are below the site minimum of ${min} m ` +
+          `${reference} (lowest: ${formatExtreme(points, below, Math.min)} m).`,
+        'points'
+      )
+    );
+  }
+  if (above.length > 0) {
+    findings.push(
+      error(
+        'points.above_site_maximum',
+        `${above.length} trajectory point(s) are above the site maximum of ${max} m ` +
+          `${reference} (highest: ${formatExtreme(points, above, Math.max)} m).`,
+        'points'
+      )
+    );
+  }
+  return findings;
+}
+
+function formatExtreme(points, indices, pick) {
+  return pick(...indices.map((index) => points[index].altitude_m));
+}
+
+/**
+ * Is the trajectory expressed in a frame the site actually defines?
+ *
+ * The trajectory carries no origin of its own, so it is only meaningful
+ * relative to some site's local frame. If the site's frame is not the one the
+ * trajectory format assumes, the coordinates cannot be placed on the ground and
+ * that has to be an error rather than a quiet mismatch.
+ *
+ * @param {object} trajectory
+ * @param {object|null} site
+ * @returns {Finding[]}
+ */
+function frameCompatibilityFindings(trajectory, site) {
+  const findings = [];
+  if (site === null || typeof site !== 'object') return findings;
+
+  const siteFrame = site.local_frame?.type ?? null;
+  if (siteFrame !== null && trajectory.frame === 'local_enu' && siteFrame !== 'ENU') {
+    findings.push(
+      error(
+        'frame.incompatible',
+        `The trajectory is expressed in local_enu but the site declares local_frame.type ` +
+          `${JSON.stringify(siteFrame)}. The coordinates cannot be interpreted against this site.`,
+        'frame'
+      )
+    );
+  }
+
+  const siteHeading = site.local_frame?.heading_reference ?? null;
   if (
-    siteAltitudeReference !== null &&
-    ALTITUDE_REFERENCES.includes(trajectory.altitude_reference) &&
-    trajectory.altitude_reference !== siteAltitudeReference
+    siteHeading !== null &&
+    typeof trajectory.heading_reference === 'string' &&
+    trajectory.heading_reference !== siteHeading
   ) {
     findings.push(
+      error(
+        'heading_reference.incompatible',
+        `The trajectory measures headings from ${trajectory.heading_reference} but the site uses ` +
+          `${siteHeading}.`,
+        'heading_reference'
+      )
+    );
+  }
+
+  // A trajectory that names a site should name *this* site.
+  const declared = trajectory.site_context?.site_id;
+  const actual = site.site_id ?? null;
+  if (isNonEmptyString(declared) && isNonEmptyString(actual) && declared !== actual) {
+    findings.push(
       warn(
-        'altitude_reference.mismatch',
-        `The trajectory is defined in ${trajectory.altitude_reference} but the loaded site uses ` +
-          `${siteAltitudeReference}. Altitude limits were not checked.`,
-        'altitude_reference'
+        'site_context.site_id_mismatch',
+        `The trajectory records site_id ${JSON.stringify(declared)} but the loaded site is ` +
+          `${JSON.stringify(actual)}. Check that this is the frame the trajectory was drawn in.`,
+        'site_context.site_id'
       )
     );
   }
