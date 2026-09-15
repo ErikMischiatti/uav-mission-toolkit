@@ -10,6 +10,7 @@ browser and pulls its JavaScript in as ES modules.
 index.html              launcher
 shared/js/*.js          the only place shared logic lives
 shared/css/common.css   the only place shared styling lives
+shared/vendor/leaflet/  Leaflet, vendored so the map works offline
 <tool>/index.html       markup for one tool
 <tool>/app.js           that tool's glue: state, events, rendering
 <tool>/style.css        that tool's small deviations from the shared CSS
@@ -21,6 +22,33 @@ The one hard rule: **geometry, coordinate conversion, file parsing and
 validation live in `shared/js/` and nowhere else.** A tool's `app.js` is allowed
 to know about the DOM and about its own workflow. It is not allowed to
 re-implement a distance formula, a CSV parser or a validation rule.
+
+The same applies to the look of the thing. Every page uses one shell — header,
+context bar, sidebar, workspace, status bar — defined once in
+`shared/css/common.css`, and every colour, spacing step and control height comes
+from a custom property there. A tool's own `style.css` holds only what is
+genuinely specific to it, such as the trajectory canvas or the sweep badges.
+
+### The application shell
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ UAV Mission Toolkit │ Tool name          nav               │  header
+├────────────────────────────────────────────────────────────┤
+│ SITE file.json   FRAME ENU·m   ALT REF AGL        ✓ Valid  │  context bar
+├───────────────────┬────────────────────────────────────────┤
+│ controls          │                                        │
+│ (scrolls)         │   workspace: map or canvas             │
+│                   │   (takes the remaining height)         │
+├───────────────────┴────────────────────────────────────────┤
+│ status line                                                │  status bar
+└────────────────────────────────────────────────────────────┘
+```
+
+The context bar exists because the four things a reader most needs — what is
+loaded, which frame is active, what altitudes are measured against, and whether
+the document is valid — were previously only discoverable by scrolling through
+unrelated controls. The workspace, not the control column, gets the screen.
 
 ## Why no build step
 
@@ -46,7 +74,7 @@ messages in `shared/js/io.js` say so explicitly.
 | `validation.js` | Schema constants and all validation rules for sites, trajectories and altitude variants. |
 | `trajectory.js` | The trajectory format: CSV columns, document construction, path headings, metrics. |
 | `site_map.js` | Leaflet rendering of a site, in editable or read-only mode. |
-| `ui.js` | DOM helpers, findings rendering, status messages, number formatting, global error handlers. |
+| `ui.js` | DOM helpers, findings rendering, the validation verdict, the context bar, status messages, contextual help, global error handlers. |
 
 Dependency direction is one way: `geo.js` depends on nothing; `validation.js`
 and `trajectory.js` depend on `geo.js` and `io.js`; `site_map.js` depends on

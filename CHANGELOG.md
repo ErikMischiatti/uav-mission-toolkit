@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map drops the tile layer, falls back to a graticule background with a
   "Map tiles unavailable — geometry only" badge, and keeps every geometry and
   editing feature working
+- A shared application shell across all four tools: a header, a context bar
+  stating what is loaded, which frame is active, the altitude reference and a
+  one-line validation verdict, a scrolling control sidebar, a workspace that
+  takes the remaining height, and a status bar
+- A small design system in `shared/css/common.css`: colour, spacing, radius and
+  type tokens with light and dark values, one control height, a four-level
+  button hierarchy, and geometry colours shared by the map and the canvas
+- Contextual help for ENU, AGL, AMSL, ATO and the heading convention
+- New test groups: `vendor`, `ui`, `forms`
+
+### Changed
+
+- The trajectory canvas sizes its text and line weights from the rendered pixel
+  size rather than from the extent of the data, and stretches its viewBox to the
+  element's aspect ratio. Labels used to scale with how far apart the waypoints
+  happened to be, and the last grid label was clipped
+- Export buttons in the trajectory editor are disabled, with an explanation,
+  while validation fails, instead of accepting the click and then refusing
+- Numeric inputs use `step="any"` for continuous quantities. A coarse step
+  combined with a `min` makes the browser mark ordinary values invalid, because
+  it validates against a grid anchored at `min`
+- The validation panel shows a quiet line rather than a green card when there is
+  nothing to report
 
 ### Added in the initial baseline
 

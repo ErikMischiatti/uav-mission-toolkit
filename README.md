@@ -36,6 +36,11 @@ This is not a flight-safety system. See [SECURITY.md](SECURITY.md).
   generated file by parsing it back and comparing it to the source.
 - Project-owned JSON and CSV formats, versioned from the first release and
   documented in [docs/file_formats.md](docs/file_formats.md).
+- One application shell across all four tools: a context bar always states what
+  is loaded, which frame is active, what altitudes are measured against, and
+  whether the document is valid.
+- Runs with no internet connection: Leaflet is vendored. Only the map tiles come
+  from the network, and their absence is handled visibly.
 - No silent defaults anywhere for safety-critical values.
 
 ## Tools
