@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Leaflet is vendored** under `shared/vendor/leaflet/`, with its BSD 2-Clause
+  license text. The toolkit now runs with no internet connection at all; only
+  the map tiles still come from the network. When tiles cannot be fetched the
+  map drops the tile layer, falls back to a graticule background with a
+  "Map tiles unavailable — geometry only" badge, and keeps every geometry and
+  editing feature working
+
+### Added in the initial baseline
+
 - Initial repository structure
 - Site editor
 - Site viewer

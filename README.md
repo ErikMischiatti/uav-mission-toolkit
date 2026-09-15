@@ -98,6 +98,8 @@ uav-mission-toolkit/
 │       ├── trajectory.js       the trajectory format and its metrics
 │       ├── site_map.js         Leaflet rendering, editable or read-only
 │       └── ui.js               DOM helpers, findings, status, errors
+│   └── vendor/
+│       └── leaflet/            Leaflet 1.9.4, vendored so the map works offline
 │
 ├── site_editor/                index.html, app.js, style.css
 ├── site_viewer/                index.html, app.js, style.css
@@ -233,10 +235,19 @@ coalescing — all baseline in browsers from 2022 onwards.
 | Mobile browsers | Layout adapts below 900 px, but dragging control points on a touch screen is untested |
 | Internet Explorer | Not supported |
 
-The map in the site editor and viewer needs an internet connection for Leaflet
-and for OpenStreetMap tiles. Both failures are handled: a missing Leaflet is
-reported in the status line and the rest of the page keeps working, and missing
-tiles leave the vector geometry drawn on a blank background.
+### Offline behaviour
+
+Leaflet is **vendored** under `shared/vendor/leaflet/`, so the toolkit needs no
+internet connection to run: every page, including both map tools, loads entirely
+from the repository.
+
+The one remaining network dependency is the **map tiles**, which come from
+OpenStreetMap. When they cannot be fetched the map does not fail silently: after
+a short run of tile errors the tile layer is dropped, the map falls back to a
+plain graticule background with a "Map tiles unavailable — geometry only" badge,
+and the status line says so. Panning, zooming, the scale bar, the safety
+polygon, the mission points and every drag handle keep working — only the
+background imagery is missing.
 
 ## Known limitations
 
@@ -264,26 +275,25 @@ tool:
 - **Bulk download** issues one browser download per file; browsers may ask for
   permission or throttle. There is no ZIP, because that would mean a dependency.
 - **Touch-screen editing is untested.**
-- **Leaflet is loaded from a CDN without a Subresource Integrity hash.** See
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for why, and for how to
-  vendor it locally.
+- **Map tiles still need an internet connection.** Leaflet itself is vendored
+  and works offline; the imagery is not. The map degrades to geometry on a
+  graticule background, which is enough to keep working but is not a basemap.
 
 ## Roadmap
 
 Roughly in the order it would make sense to do the work:
 
 1. Browser-level coverage for the DOM modules, without taking on a dependency.
-2. Vendor Leaflet locally (or pin it with an SRI hash) so the map works offline.
-3. Load a site into the trajectory editor, so trajectories can be validated
+2. Load a site into the trajectory editor, so trajectories can be validated
    against a real safety polygon while they are being drawn.
-4. Per-point altitude profiles, including a climb/descent-aware duration
+3. Per-point altitude profiles, including a climb/descent-aware duration
    estimate.
-5. Replace the tangent-plane approximation with a proper geodesy implementation
+4. Replace the tangent-plane approximation with a proper geodesy implementation
    behind the existing two-function interface.
-6. Import of existing site and trajectory files from common generic formats
+5. Import of existing site and trajectory files from common generic formats
    (GeoJSON, plain waypoint CSV) with an explicit mapping step.
-7. Undo/redo and draft persistence in `localStorage`.
-8. A printable mission summary.
+6. Undo/redo and draft persistence in `localStorage`.
+7. A printable mission summary.
 
 ## Contributing
 
