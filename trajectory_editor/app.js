@@ -8,10 +8,23 @@
  *
  * Altitude and altitude reference start empty on purpose. Export is refused
  * until both are set, because a bare altitude number means nothing.
+ *
+ * A site may be loaded as *context*. It sets the local frame the trajectory is
+ * expressed in, is drawn behind the path, and is what the trajectory is
+ * validated against. It is strictly read-only here: nothing in this file writes
+ * to the site object, and the trajectory editor is deliberately not a second
+ * place to edit a site.
  */
 
-import { distance2dM } from '../shared/js/geo.js';
-import { downloadJson, downloadText, sanitizeFilenamePart } from '../shared/js/io.js';
+import { distance2dM, pathSegmentsLeavingPolygon, pointInPolygon } from '../shared/js/geo.js';
+import {
+  downloadJson,
+  downloadText,
+  fetchJson,
+  parseJson,
+  readFileAsText,
+  sanitizeFilenamePart,
+} from '../shared/js/io.js';
 import {
   buildTrajectoryDocument,
   computePathHeadings,
@@ -23,6 +36,8 @@ import {
   ALTITUDE_REFERENCES,
   SEVERITY,
   hasErrors,
+  validateAgainstSite,
+  validateSite,
   validateTrajectory,
 } from '../shared/js/validation.js';
 import {
@@ -58,6 +73,9 @@ const DEGENERATE_SEGMENT_M = 0.01;
  */
 const DEGENERATE_PATH_HEADING_DEG = 0;
 
+/** Example index. The toolkit never scrapes an HTTP directory listing. */
+const MANIFEST_URL = '../examples/manifest.json';
+
 const state = {
   /** @type {Array<{east_m: number, north_m: number}>} */
   points: [],
@@ -66,6 +84,16 @@ const state = {
   selectedIndex: null,
   /** @type {TrajectoryCanvas|null} */
   canvas: null,
+  /**
+   * Read-only site context, or null for the abstract local plane.
+   * @type {object|null}
+   */
+  site: null,
+  siteLabel: null,
+  /** @type {URL|null} */
+  manifestUrl: null,
+  /** @type {Array<object>} */
+  manifestSites: [],
 };
 
 const els = {};
@@ -78,12 +106,15 @@ document.addEventListener('DOMContentLoaded', () => {
   wireEvents();
   initCanvas();
   updatePresetVisibility();
+  renderSiteSummary();
   generateFromPreset({ announce: false });
   setStatus(
     els.status,
-    'Racetrack preset loaded. Set an altitude and an altitude reference before exporting.',
+    'Racetrack preset loaded. Choose a site for context, and set an altitude and an altitude ' +
+      'reference before exporting.',
     'info'
   );
+  loadSiteManifest();
 });
 
 function cacheElements() {
@@ -114,6 +145,11 @@ function cacheElements() {
   els.fitView = must('#fit-view');
   els.cursorReadout = must('#cursor-readout');
 
+  els.siteSource = must('#site-source');
+  els.siteFile = must('#site-file');
+  els.siteSummary = must('#site-summary');
+
+  els.ctxSite = must('#ctx-site');
   els.ctxFrame = must('#ctx-frame');
   els.ctxAltitude = must('#ctx-altitude');
   els.ctxVerdict = must('#ctx-verdict');
@@ -158,6 +194,181 @@ function wireEvents() {
   els.fitView.addEventListener('click', () => {
     state.canvas?.fit();
   });
+
+  els.siteSource.addEventListener('change', () => onSiteSourceChanged());
+  els.siteFile.addEventListener('change', (event) => {
+    const [file] = event.target.files ?? [];
+    if (file) loadSiteFromFile(file);
+  });
+}
+
+// --- site context -----------------------------------------------------------
+
+/**
+ * Fill the site picker from the example manifest.
+ *
+ * "No site" stays the first option and the default: working without a site is a
+ * legitimate choice, not a degraded state, and the tool must not imply that one
+ * of the shipped examples is the right frame for whatever the user is drawing.
+ */
+async function loadSiteManifest() {
+  try {
+    state.manifestUrl = new URL(MANIFEST_URL, window.location.href);
+    const manifest = await fetchJson(state.manifestUrl.href);
+    state.manifestSites = Array.isArray(manifest?.sites) ? manifest.sites : [];
+    state.manifestSites.forEach((entry, index) => {
+      els.siteSource.append(
+        el('option', {
+          value: `example:${index}`,
+          text: entry.name ?? entry.id ?? entry.site_path,
+        })
+      );
+    });
+  } catch (err) {
+    // A missing manifest must not take the tool down: the local-file path and
+    // the no-site path both still work.
+    reportError(els.status, err, 'Could not read the example site manifest');
+  }
+}
+
+function onSiteSourceChanged() {
+  const value = els.siteSource.value;
+  if (value === 'none') {
+    adoptSite(null, null);
+    setStatus(els.status, 'Working without a site, in an abstract local plane.', 'info');
+    return;
+  }
+  const index = Number(value.slice('example:'.length));
+  loadExampleSite(index);
+}
+
+async function loadExampleSite(index) {
+  try {
+    const entry = state.manifestSites[index];
+    if (!entry?.site_path) throw new Error('That manifest entry has no "site_path".');
+    const site = await fetchJson(new URL(entry.site_path, state.manifestUrl).href);
+    adoptSite(site, `examples/${entry.site_path}`);
+  } catch (err) {
+    reportError(els.status, err, 'Could not load the site');
+  }
+}
+
+/** @param {File} file */
+async function loadSiteFromFile(file) {
+  try {
+    const text = await readFileAsText(file);
+    const site = parseJson(text, file.name);
+    if (site === null || typeof site !== 'object' || Array.isArray(site)) {
+      throw new Error(`"${file.name}" does not contain a site object.`);
+    }
+    // A local file is not in the picker, so give it an entry and select it.
+    let option = els.siteSource.querySelector('option[value="local"]');
+    if (option === null) {
+      option = el('option', { value: 'local' });
+      els.siteSource.append(option);
+    }
+    option.textContent = file.name;
+    els.siteSource.value = 'local';
+    adoptSite(site, file.name);
+  } catch (err) {
+    reportError(els.status, err, `Could not load "${file.name}"`);
+  }
+}
+
+/**
+ * Take a site as context.
+ *
+ * The site is validated first: checking a trajectory against a site that is
+ * itself broken produces findings that blame the wrong document. A site with
+ * errors is still adopted — it is the user's data and they may be mid-repair —
+ * but the tool says so rather than quietly treating it as authoritative.
+ *
+ * @param {object|null} site
+ * @param {string|null} label
+ */
+function adoptSite(site, label) {
+  state.site = site;
+  state.siteLabel = label;
+  renderSiteSummary();
+  refresh({ rebuildTable: false, fitCanvas: true });
+
+  if (site === null) return;
+
+  const findings = validateSite(site);
+  if (hasErrors(findings)) {
+    setStatus(
+      els.status,
+      `Loaded "${label}" as context, but that site definition has validation errors. ` +
+        `Checks against it may be misleading — repair it in the Site Editor.`,
+      'warning'
+    );
+  } else {
+    setStatus(els.status, `Site context: "${label}". The trajectory is checked against it.`, 'ok');
+  }
+}
+
+function renderSiteSummary() {
+  clear(els.siteSummary);
+  const site = state.site;
+  if (site === null) {
+    els.siteSummary.append(
+      el('p', {
+        class: 'panel__hint',
+        text:
+          'No site. Coordinates are metres in an abstract local plane, and nothing checks them ' +
+          'against a safety area or an altitude band.',
+      })
+    );
+    return;
+  }
+
+  const safety = site.safety_area ?? {};
+  const band =
+    Number.isFinite(safety.min_altitude_m) && Number.isFinite(safety.max_altitude_m)
+      ? `${safety.min_altitude_m} … ${safety.max_altitude_m} m ${safety.altitude_reference ?? '(reference not set)'}`
+      : NO_VALUE;
+
+  els.siteSummary.append(
+    definitionList([
+      ['Name', typeof site.name === 'string' ? site.name : NO_VALUE],
+      ['Site id', typeof site.site_id === 'string' ? site.site_id : 'not set'],
+      ['Frame', site.local_frame?.type ?? NO_VALUE],
+      ['Altitude band', band],
+      [
+        'Safety vertices',
+        String(Array.isArray(safety.horizontal) ? safety.horizontal.length : 0),
+      ],
+      [
+        'Mission points',
+        String(Array.isArray(site.mission_points) ? site.mission_points.length : 0),
+      ],
+    ])
+  );
+}
+
+/**
+ * Which control points fall outside the site's safety area, and which segments
+ * leave it. Used to mark them on the canvas; the validation panel gets the same
+ * facts from shared/js/validation.js.
+ *
+ * @returns {{outsidePointIndices: number[], leavingSegmentIndices: number[]}}
+ */
+function siteViolations() {
+  const ring = state.site?.safety_area?.horizontal;
+  const polygon = Array.isArray(ring) && ring.length >= 3 ? ring : null;
+  if (polygon === null) return { outsidePointIndices: [], leavingSegmentIndices: [] };
+
+  const outsidePointIndices = [];
+  state.points.forEach((point, index) => {
+    if (!pointInPolygon(point, polygon)) outsidePointIndices.push(index);
+  });
+
+  return {
+    outsidePointIndices,
+    leavingSegmentIndices: pathSegmentsLeavingPolygon(state.points, polygon, {
+      closed: state.closed,
+    }),
+  };
 }
 
 function initCanvas() {
@@ -382,7 +593,21 @@ function buildDocumentOrFindings() {
     );
   }
 
-  if (hasErrors(findings)) return { document: null, findings };
+  if (hasErrors(findings)) {
+    // The document cannot be assembled yet, but the site checks do not depend
+    // on it. Run them anyway: "your path leaves the safety area" must not stay
+    // hidden behind "you have not chosen an altitude reference".
+    return {
+      document: null,
+      findings: [
+        ...findings,
+        ...validateAgainstSite(
+          { points: state.points, closed: state.closed, altitudeReference },
+          state.site
+        ),
+      ],
+    };
+  }
 
   const points = state.points.map((point, index) => ({
     east_m: point.east_m,
@@ -398,9 +623,16 @@ function buildDocumentOrFindings() {
     speedMps: speed,
     altitudeReference,
     closed: state.closed,
+    site: state.site,
   });
 
-  return { document: document_, findings: [...findings, ...validateTrajectory(document_)] };
+  return {
+    document: document_,
+    findings: [
+      ...findings,
+      ...validateTrajectory(document_, state.site === null ? {} : { site: state.site }),
+    ],
+  };
 }
 
 function countShortSegments() {
@@ -428,12 +660,15 @@ function refresh(options = {}) {
 }
 
 function drawCanvas({ fit }) {
+  const violations = siteViolations();
   state.canvas?.setData(
     {
       points: state.points,
       closed: state.closed,
       headings: currentHeadings(),
       selectedIndex: state.selectedIndex,
+      site: state.site,
+      ...violations,
     },
     { fit }
   );
@@ -566,6 +801,22 @@ function renderValidation() {
   setContext(
     els.ctxAltitude,
     altitude === null ? null : `${altitude} m ${reference || '(reference not set)'}`
+  );
+  setContext(
+    els.ctxSite,
+    state.site === null
+      ? null
+      : state.site.site_id ?? state.site.name ?? state.siteLabel,
+    'no site'
+  );
+  // The frame slot says something new only when the site disagrees with what
+  // the trajectory format assumes; repeating "ENU" twice is just noise.
+  const siteFrame = state.site?.local_frame?.type ?? null;
+  setContext(
+    els.ctxFrame,
+    siteFrame !== null && siteFrame !== 'ENU'
+      ? `local ENU · metres — site declares ${siteFrame}`
+      : 'local ENU · metres'
   );
 
   for (const button of [els.downloadJson, els.downloadCsv]) {

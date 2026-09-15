@@ -49,7 +49,23 @@ const PX = Object.freeze({
   label: 10,
   caption: 11,
   labelPad: 4,
+  siteArea: 1.5,
+  sitePointRadius: 3,
 });
+
+/**
+ * Every local point of a site, so the view can be fitted to it.
+ * @param {object|null} site
+ * @returns {Array<{east_m:number,north_m:number}>}
+ */
+function siteExtentPoints(site) {
+  if (site === null || typeof site !== 'object') return [];
+  const ring = Array.isArray(site.safety_area?.horizontal) ? site.safety_area.horizontal : [];
+  const points = Array.isArray(site.mission_points) ? site.mission_points : [];
+  return [...ring, ...points].filter(
+    (p) => p && Number.isFinite(p.east_m) && Number.isFinite(p.north_m)
+  );
+}
 
 export class TrajectoryCanvas {
   /**
@@ -64,7 +80,18 @@ export class TrajectoryCanvas {
   constructor(svg, callbacks = {}) {
     this.svg = svg;
     this.callbacks = callbacks;
-    this.data = { points: [], closed: false, headings: [], selectedIndex: null };
+    this.data = {
+      points: [],
+      closed: false,
+      headings: [],
+      selectedIndex: null,
+      /** Read-only site context, or null. Never mutated by this class. */
+      site: null,
+      /** Indices of control points outside the site's safety area. */
+      outsidePointIndices: [],
+      /** Indices of path segments that leave the site's safety area. */
+      leavingSegmentIndices: [],
+    };
     this.view = {
       minX: -DEFAULT_HALF_EXTENT_M,
       minY: -DEFAULT_HALF_EXTENT_M,
@@ -83,7 +110,9 @@ export class TrajectoryCanvas {
 
   /**
    * @param {{points: Array<{east_m:number,north_m:number}>, closed: boolean,
-   *          headings: Array<number|null>, selectedIndex: number|null}} data
+   *          headings: Array<number|null>, selectedIndex: number|null,
+   *          site?: object|null, outsidePointIndices?: number[],
+   *          leavingSegmentIndices?: number[]}} data
    * @param {{fit?: boolean}} [options]
    */
   setData(data, options = {}) {
@@ -92,9 +121,15 @@ export class TrajectoryCanvas {
     else this.render();
   }
 
-  /** Recompute the viewBox from the current points. */
+  /**
+   * Recompute the viewBox from the current points and the site context.
+   *
+   * The site is included so that "fit view" frames the whole working area, not
+   * just the path: a trajectory tucked in one corner of a large safety area is
+   * exactly the case where the surrounding context matters most.
+   */
   fit() {
-    const points = this.data.points;
+    const points = [...this.data.points, ...siteExtentPoints(this.data.site)];
     if (points.length === 0) {
       this.view = {
         minX: -DEFAULT_HALF_EXTENT_M,
@@ -156,8 +191,63 @@ export class TrajectoryCanvas {
 
     this.#drawGrid(u);
     this.#drawAxes(u);
+    // The site is context, so it is drawn behind the trajectory it contains.
+    this.#drawSite(u);
     this.#drawPath(u);
     this.#drawPoints(u);
+  }
+
+  /**
+   * Draw the loaded site behind the trajectory: safety polygon, origin and
+   * mission points.
+   *
+   * Everything here is read-only. Nothing in this method is interactive, and
+   * nothing anywhere in this class writes back to the site object — the
+   * trajectory editor must never become a second, divergent site editor.
+   */
+  #drawSite(u) {
+    const site = this.data.site;
+    if (site === null || typeof site !== 'object') return;
+    const group = svgEl('g', { class: 'canvas-site' });
+
+    const ring = site.safety_area?.horizontal;
+    if (Array.isArray(ring) && ring.length >= 3) {
+      const usable = ring.filter(
+        (v) => v && Number.isFinite(v.east_m) && Number.isFinite(v.north_m)
+      );
+      if (usable.length >= 3) {
+        group.append(
+          svgEl('polygon', {
+            points: usable.map((v) => `${v.east_m},${-v.north_m}`).join(' '),
+            class: 'canvas-site-area',
+            'stroke-width': PX.siteArea * u,
+            'stroke-dasharray': `${6 * u} ${4 * u}`,
+          })
+        );
+      }
+    }
+
+    for (const point of site.mission_points ?? []) {
+      if (!point || !Number.isFinite(point.east_m) || !Number.isFinite(point.north_m)) continue;
+      group.append(
+        svgEl('circle', {
+          cx: point.east_m,
+          cy: -point.north_m,
+          r: PX.sitePointRadius * u,
+          class: 'canvas-site-point',
+        })
+      );
+      group.append(
+        svgEl('text', {
+          x: point.east_m + PX.sitePointRadius * u * 1.8,
+          y: -point.north_m + PX.label * u * 0.35,
+          'font-size': PX.label * u,
+          class: 'canvas-site-label',
+        }, String(point.id ?? ''))
+      );
+    }
+
+    this.svg.append(group);
   }
 
   /**
@@ -262,6 +352,14 @@ export class TrajectoryCanvas {
     this.svg.append(group);
   }
 
+  /**
+   * Draw the path.
+   *
+   * Segments that leave the site's safety area are drawn separately, on top and
+   * in the danger colour, so an unsafe leg is visible on the canvas and not
+   * only in the validation panel. The dash pattern means the distinction
+   * survives for a reader who cannot rely on the colour.
+   */
   #drawPath(u) {
     const points = this.data.points;
     if (points.length < 2) return;
@@ -276,14 +374,33 @@ export class TrajectoryCanvas {
         fill: 'none',
       })
     );
+
+    for (const index of this.data.leavingSegmentIndices ?? []) {
+      const from = points[index];
+      const to = points[(index + 1) % points.length];
+      if (!from || !to) continue;
+      this.svg.append(
+        svgEl('line', {
+          x1: from.east_m,
+          y1: -from.north_m,
+          x2: to.east_m,
+          y2: -to.north_m,
+          class: 'canvas-path canvas-path--violating',
+          'stroke-width': PX.path * u * 1.5,
+          'stroke-dasharray': `${5 * u} ${3 * u}`,
+        })
+      );
+    }
   }
 
   #drawPoints(u) {
     const group = svgEl('g', { class: 'canvas-points' });
+    const outside = new Set(this.data.outsidePointIndices ?? []);
     this.data.points.forEach((point, index) => {
       const isSelected = index === this.data.selectedIndex;
       const classes = ['canvas-point'];
       if (isSelected) classes.push('canvas-point--selected');
+      if (outside.has(index)) classes.push('canvas-point--outside');
       group.append(
         svgEl('circle', {
           cx: point.east_m,

@@ -57,6 +57,34 @@
   font-family: var(--font-mono);
 }
 
+/* Read-only site context drawn behind the trajectory. */
+.canvas-site-area {
+  fill: var(--geo-safety-fill);
+  fill-opacity: 0.08;
+  stroke: var(--geo-safety);
+  stroke-dasharray: 6 4;
+}
+
+.canvas-site-point {
+  fill: var(--geo-safety);
+  fill-opacity: 0.55;
+}
+
+.canvas-site-label {
+  fill: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Segments that leave the site's safety area. */
+.canvas-path--violating {
+  stroke: var(--danger);
+}
+
+.canvas-point--outside {
+  fill: var(--danger);
+  stroke: var(--danger);
+}
+
 /* The control-point list can grow long; keep the panel a sensible height. */
 .point-table {
   max-height: 300px;

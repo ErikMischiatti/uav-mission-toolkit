@@ -105,6 +105,7 @@ function cacheElements() {
   els.statistics = must('#statistics');
   els.map = must('#map');
   els.fitView = must('#fit-view');
+  els.siteId = must('#site-id');
 
   els.ctxSource = must('#ctx-source');
   els.ctxFrame = must('#ctx-frame');
@@ -194,6 +195,15 @@ function wireEvents() {
     if (state.site !== null) addMissionPoint();
   });
   els.fitView.addEventListener('click', () => state.mapView?.fit());
+
+  els.siteId.addEventListener('input', () => {
+    if (state.site === null) return;
+    const value = els.siteId.value.trim();
+    // An empty field means "no id", not an empty-string id.
+    if (value === '') delete state.site.site_id;
+    else state.site.site_id = value;
+    refresh({ rebuildTables: false });
+  });
 }
 
 /**
@@ -312,6 +322,7 @@ function refresh(options = {}) {
 function renderFields() {
   const site = state.site;
   els.siteName.value = typeof site.name === 'string' ? site.name : '';
+  els.siteId.value = typeof site.site_id === 'string' ? site.site_id : '';
   els.originLat.value = numberToInput(site.origin.latitude_deg);
   els.originLon.value = numberToInput(site.origin.longitude_deg);
   els.originAlt.value = numberToInput(site.origin.altitude_amsl_m);
