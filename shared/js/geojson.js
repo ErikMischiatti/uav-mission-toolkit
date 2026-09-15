@@ -27,7 +27,7 @@
  * module that indexes into a coordinate array, and it validates both ranges.
  */
 
-import { geodeticToEnu } from './geo.js';
+import { enuToGeodetic, geodeticToEnu } from './geo.js';
 import { roundTo } from './io.js';
 import { SEVERITY } from './validation.js';
 
@@ -612,6 +612,113 @@ export function usableOrigin(origin) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
   return { latitude_deg: lat, longitude_deg: lon };
+}
+
+/**
+ * Export a site as a GeoJSON FeatureCollection.
+ *
+ * The inverse of the import path, and useful for exactly one thing: looking at
+ * a site in a real GIS. It is deliberately lossy, and says so in the properties
+ * rather than inventing a place to put what GeoJSON cannot hold — altitudes
+ * have no reference in GeoJSON, so they travel as properties, not as a third
+ * coordinate that a reader might mistake for a height above something.
+ *
+ * @param {object} site
+ * @returns {{geojson: object|null, findings: Array<object>}}
+ */
+export function buildGeoJsonFromSite(site) {
+  const findings = [];
+  const origin = usableOrigin(site?.origin);
+  if (origin === null) {
+    return {
+      geojson: null,
+      findings: [
+        error(
+          'export.no_origin',
+          'This site has no usable origin, so its local coordinates cannot be expressed as ' +
+            'latitude and longitude.'
+        ),
+      ],
+    };
+  }
+
+  const features = [];
+
+  const ring = site.safety_area?.horizontal;
+  if (Array.isArray(ring) && ring.length >= 3) {
+    const usable = ring.filter(
+      (vertex) => vertex && Number.isFinite(vertex.east_m) && Number.isFinite(vertex.north_m)
+    );
+    if (usable.length >= 3) {
+      // A GeoJSON linear ring repeats its first position at the end; this
+      // project's ring is open, so the closing position is added here.
+      const positions = usable.map((vertex) => toPosition(origin, vertex));
+      positions.push(positions[0]);
+      features.push({
+        type: 'Feature',
+        properties: {
+          role: 'safety_area',
+          min_altitude_m: site.safety_area?.min_altitude_m ?? null,
+          max_altitude_m: site.safety_area?.max_altitude_m ?? null,
+          altitude_reference: site.safety_area?.altitude_reference ?? null,
+        },
+        geometry: { type: 'Polygon', coordinates: [positions] },
+      });
+    }
+  }
+
+  features.push({
+    type: 'Feature',
+    properties: {
+      role: 'origin',
+      name: site.name ?? null,
+      site_id: site.site_id ?? null,
+      altitude_amsl_m: site.origin?.altitude_amsl_m ?? null,
+    },
+    geometry: { type: 'Point', coordinates: [origin.longitude_deg, origin.latitude_deg] },
+  });
+
+  for (const point of site.mission_points ?? []) {
+    if (!point || !Number.isFinite(point.east_m) || !Number.isFinite(point.north_m)) continue;
+    features.push({
+      type: 'Feature',
+      properties: {
+        role: 'mission_point',
+        name: point.id ?? null,
+        altitude_m: point.altitude_m ?? null,
+        altitude_reference: point.altitude_reference ?? null,
+        heading_deg: point.heading_deg ?? null,
+      },
+      geometry: { type: 'Point', coordinates: toPosition(origin, point) },
+    });
+  }
+
+  findings.push(
+    info(
+      'export.lossy',
+      'GeoJSON carries geometry, not this project\'s semantics. Altitudes, altitude references ' +
+        'and headings are written as feature properties, which no other tool will interpret. ' +
+        'The site.json remains the authoritative form.'
+    )
+  );
+
+  return {
+    geojson: {
+      type: 'FeatureCollection',
+      // RFC 7946 fixes the CRS as WGS84, so there is no crs member to write.
+      features,
+    },
+    findings,
+  };
+}
+
+/**
+ * Local ENU back to a GeoJSON position, longitude first.
+ * @returns {[number, number]}
+ */
+function toPosition(origin, local) {
+  const geodetic = enuToGeodetic(origin, local);
+  return [roundTo(geodetic.longitude_deg, 9), roundTo(geodetic.latitude_deg, 9)];
 }
 
 // --- helpers ----------------------------------------------------------------

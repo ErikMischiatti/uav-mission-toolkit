@@ -17,6 +17,7 @@ import { enuToGeodetic, verticesMean } from '../shared/js/geo.js';
 import {
   IMPORT_TARGETS,
   applyImportPlan,
+  buildGeoJsonFromSite,
   parseGeoJson,
   usableOrigin,
 } from '../shared/js/geojson.js';
@@ -125,6 +126,7 @@ function cacheElements() {
   els.ctxDirty = must('#ctx-dirty');
 
   els.geojsonFile = must('#geojson-file');
+  els.exportGeojson = must('#export-geojson');
   els.importDialog = must('#import-dialog');
   els.importRows = must('#import-rows');
   els.importFindings = must('#import-findings');
@@ -247,6 +249,7 @@ function wireEvents() {
     // Clear the input so re-picking the same file fires another change event.
     event.target.value = '';
   });
+  els.exportGeojson.addEventListener('click', () => exportGeoJson());
   els.importDialog.addEventListener('close', () => {
     if (els.importDialog.returnValue === 'import') runImport();
   });
@@ -941,6 +944,30 @@ function runImport() {
       (warnings.length > 0 ? ` ${warnings.map((f) => f.message).join(' ')}` : ''),
     warnings.length > 0 ? 'warning' : 'ok'
   );
+}
+
+/** Write the site out as GeoJSON, for looking at it in a GIS. */
+function exportGeoJson() {
+  try {
+    if (state.site === null) {
+      setStatus(els.status, 'Nothing to export: load a site first.', 'warning');
+      return;
+    }
+    const { geojson, findings } = buildGeoJsonFromSite(state.site);
+    if (geojson === null) {
+      setStatus(els.status, `GeoJSON export refused: ${findings[0].message}`, 'error');
+      return;
+    }
+    const filename = `${sanitizeFilenamePart(state.site.name ?? 'site')}.geojson`;
+    downloadJson(filename, geojson);
+    setStatus(
+      els.status,
+      `Downloaded "${filename}". ${findings.find((f) => f.code === 'export.lossy')?.message ?? ''}`,
+      'ok'
+    );
+  } catch (err) {
+    reportError(els.status, err, 'GeoJSON export failed');
+  }
 }
 
 // --- export -----------------------------------------------------------------
