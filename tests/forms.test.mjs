@@ -185,20 +185,13 @@ describe('forms: the shared shell', (test) => {
     }
   });
 
-  test('every tool page shows a context bar and a validation verdict', () => {
+  test('every tool page states what is loaded and whether it is valid', () => {
     for (const page of TOOL_PAGES) {
       const html = read(page);
       assert.ok(html.includes('class="context-bar"'), `${page} has no context bar`);
       assert.ok(html.includes('id="ctx-verdict"'), `${page} does not show a validation verdict`);
-    }
-  });
-
-  test('every tool that opens a document says which one is loaded', () => {
-    // The trajectory editor is absent on purpose: it creates a trajectory
-    // rather than opening one, and has no document to name yet.
-    for (const page of ['site_editor/index.html', 'site_viewer/index.html', 'altitude_sweep/index.html']) {
       assert.ok(
-        read(page).includes('id="ctx-source"'),
+        html.includes('id="ctx-source"') || html.includes('id="ctx-site"'),
         `${page} does not say what is currently loaded`
       );
     }
