@@ -380,3 +380,83 @@ column differed.
 Filenames here are labels. Nothing in the toolkit reads an altitude back out of
 a filename.
 
+---
+
+## 5. GeoJSON interchange
+
+GeoJSON ([RFC 7946](https://datatracker.ietf.org/doc/html/rfc7946)) is an
+*interchange* format here, not a format this project owns. The site definition
+remains authoritative.
+
+### Import
+
+The site editor reads a GeoJSON file and lists every feature it contains, with
+what it would become. **Nothing is imported until that mapping is confirmed.**
+A polygon in a file is a polygon; whether it is this site's safety area is a
+judgement only the operator can make, so the toolkit never decides it.
+
+| GeoJSON | May become |
+| --- | --- |
+| `Polygon` (single ring) | the safety area |
+| `Point` | a mission point, or the site origin |
+| `MultiPolygon` holding exactly one polygon | the safety area |
+| `MultiPoint` holding exactly one position | a mission point, or the origin |
+| `Feature`, `FeatureCollection` | containers for the above |
+
+Refused, with the reason shown next to the feature:
+
+- `LineString`, `MultiLineString` and anything else — no mapping is defined.
+- `GeometryCollection` — its members carry no properties, so there is nothing to
+  tell one geometry from another when choosing what each should become.
+- A `MultiPolygon` or `MultiPoint` with more than one member — a site has one
+  safety area, so the mapping would be a guess.
+- A `Polygon` with interior rings (holes) — a safety area is a single ring and
+  cannot express a hole. Dropping one would silently *enlarge* the area you are
+  allowed to fly in.
+
+### Coordinate order
+
+GeoJSON positions are `[longitude, latitude]`, longitude first. A reversed pair
+usually still parses and often still plots somewhere plausible, which is what
+makes it the most common way to corrupt imported geometry. Both ranges are
+validated, and a latitude outside ±90 is reported with the expected order spelled
+out. All position reading goes through one function, `readPosition()`.
+
+A third (elevation) value is **ignored**, and the fact that it was present is
+reported. GeoJSON does not say what an elevation is measured against, and this
+toolkit does not guess an altitude reference.
+
+### The origin
+
+Converting latitude/longitude into local ENU metres requires a site origin.
+
+- If the site already has one, imported geometry is converted against it.
+- If it does not, the import is **refused** with a message saying so — unless
+  one imported `Point` is explicitly marked as the site origin, which sets it.
+- If the site already has an origin, an import will **not** move it: doing so
+  would change the meaning of every local coordinate already in the site. The
+  origin is edited deliberately, in the Origin and frame panel.
+
+An origin is never invented.
+
+### What import never fills in
+
+Imported mission points have **no altitude and no altitude reference**. Both are
+safety-critical, GeoJSON carries neither in a form that can be trusted, and the
+site validator reports them as missing until a human sets them.
+
+### Export
+
+A site can be written out as a `FeatureCollection` for inspection in a GIS. It
+is deliberately lossy and says so:
+
+- One `Polygon` for the safety area, with the altitude band and its reference as
+  feature properties.
+- One `Point` for the origin, carrying the site name and `site_id`.
+- One `Point` per mission point, with its altitude, altitude reference and
+  heading as properties.
+
+Altitudes are written as **properties, never as a third coordinate**, precisely
+because a third coordinate would be read as a height above something unstated.
+No other tool will interpret these properties; `site.json` remains the
+authoritative form.

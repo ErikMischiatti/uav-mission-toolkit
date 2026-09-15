@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation they would reverse. A drag is one operation, the redo branch is
   discarded on the next edit, history is bounded, and loading a document resets
   it so undo cannot walk back into the previous file
+- **Generic GeoJSON import** in the site editor, with an explicit mapping step:
+  every feature in the file is listed and nothing is imported until the user
+  says what it becomes. Supports `Point`, `Polygon`, `Feature`,
+  `FeatureCollection`, and `MultiPoint`/`MultiPolygon` only when they hold
+  exactly one geometry. An origin is never invented: without one the import is
+  refused, unless a point is explicitly marked as the origin
+- **GeoJSON export** of a site, for inspection in a GIS. Deliberately lossy and
+  says so: altitudes and their references travel as feature properties
 - A shared application shell across all four tools: a header, a context bar
   stating what is loaded, which frame is active, the altitude reference and a
   one-line validation verdict, a scrolling control sidebar, a workspace that
@@ -40,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type tokens with light and dark values, one control height, a four-level
   button hierarchy, and geometry colours shared by the map and the canvas
 - Contextual help for ENU, AGL, AMSL, ATO and the heading convention
-- New test groups: `vendor`, `ui`, `forms`, `site_aware`, `history`
+- New test groups: `history`, `geojson`, `site_aware`, `ui`, `forms`, `vendor`
 
 ### Changed
 

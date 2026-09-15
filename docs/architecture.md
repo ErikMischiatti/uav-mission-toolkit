@@ -77,11 +77,13 @@ messages in `shared/js/io.js` say so explicitly.
 | `site_map.js` | Leaflet rendering of a site, in editable or read-only mode. |
 | `ui.js` | DOM helpers, findings rendering, the validation verdict, the context bar, status messages, contextual help, global error handlers. |
 | `history.js` | Undo/redo. One implementation, used by every tool that edits a document. |
+| `geojson.js` | Generic GeoJSON import and export, and the mapping step that keeps it explicit. |
 
 Dependency direction is one way: `geo.js` depends on nothing; `validation.js`
-and `trajectory.js` depend on `geo.js` and `io.js`; `site_map.js` depends on
-`geo.js`, `io.js` and `ui.js`; every tool depends on the shared layer and never
-the reverse. There are no cycles.
+and `trajectory.js` depend on `geo.js` and `io.js`; `geojson.js` depends on
+`geo.js`, `io.js` and `validation.js`; `site_map.js` depends on `geo.js`,
+`io.js` and `ui.js`; `history.js` depends on nothing at all; every tool depends
+on the shared layer and never the reverse. There are no cycles.
 
 ### Why undo/redo stores snapshots
 

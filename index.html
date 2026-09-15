@@ -46,6 +46,7 @@
               <li>Origin, safety polygon and altitude limits</li>
               <li>Mission points, draggable on the map</li>
               <li>Validation as you edit, with no hidden defaults</li>
+              <li>Import geometry from GeoJSON, with an explicit mapping step</li>
             </ul>
             <p class="tool-card__io">out: site.json</p>
           </a>
@@ -55,13 +56,14 @@
           <a class="tool-card" href="trajectory_editor/index.html">
             <span class="tool-card__step">Step 2</span>
             <h3>Trajectory Editor</h3>
-<p>Sketch a path in the local ENU plane and export it in a documented, generic format.</p>
+            <p>Draw the path inside that site, in the site's own local frame.</p>
             <ul>
               <li>Straight, circle, racetrack and figure-eight presets</li>
-              <li>Draggable control points</li>
+              <li>Draggable control points, with undo and redo</li>
+              <li>Live checks against the loaded site's safety area and altitude band</li>
               <li>Path length and a constant-speed duration estimate</li>
             </ul>
-            <p class="tool-card__io">out: trajectory.json / .csv</p>
+            <p class="tool-card__io">in: site.json &middot; out: trajectory.json / .csv</p>
           </a>
 
           <div class="flow__arrow" aria-hidden="true">→</div>

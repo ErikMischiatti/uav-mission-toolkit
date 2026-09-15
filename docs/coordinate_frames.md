@@ -187,3 +187,19 @@ A trajectory with no `site_context` is still valid. It simply does not claim a
 frame it cannot back up, and whoever loads it has to know which site it belongs
 to by other means.
 
+## Importing latitude and longitude
+
+Geographic coordinates entering the toolkit (currently via GeoJSON) are
+converted into the local frame by `geodeticToEnu()`, against the site origin and
+nothing else. Two rules apply:
+
+- **The origin is never invented.** Without one there is no local frame, so the
+  conversion is refused with a message rather than anchored somewhere plausible.
+- **Elevations are not imported.** GeoJSON positions may carry a third value,
+  but the format does not say what it is measured against. An altitude without
+  its reference is meaningless here, so the value is dropped and the fact is
+  reported.
+
+GeoJSON orders positions `[longitude, latitude]` — the opposite of how they are
+usually spoken. That conversion happens in exactly one function,
+`readPosition()` in `shared/js/geojson.js`, which validates both ranges.
