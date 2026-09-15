@@ -14,6 +14,7 @@
  */
 
 import { enuToGeodetic, verticesMean } from '../shared/js/geo.js';
+import { History, attachHistoryControls } from '../shared/js/history.js';
 import {
   downloadJson,
   fetchJson,
@@ -65,6 +66,13 @@ const state = {
   sourceLabel: 'nothing yet',
   /** @type {SiteMapView|null} */
   mapView: null,
+  /**
+   * Undo/redo over the whole site object. Reset on every load, so undo can
+   * never walk back into a previously opened file.
+   */
+  history: new History(),
+  /** True once the site differs from what was loaded. */
+  dirty: false,
 };
 
 const els = {};
@@ -105,7 +113,11 @@ function cacheElements() {
   els.statistics = must('#statistics');
   els.map = must('#map');
   els.fitView = must('#fit-view');
+  els.undo = must('#undo');
+  els.redo = must('#redo');
   els.siteId = must('#site-id');
+  els.ctxDirty = must('#ctx-dirty');
+
 
   els.ctxSource = must('#ctx-source');
   els.ctxFrame = must('#ctx-frame');
@@ -168,11 +180,13 @@ function wireEvents() {
   els.frameType.addEventListener('change', () => {
     if (state.site === null) return;
     state.site.local_frame.type = els.frameType.value || null;
+    commit('Change local frame');
     refresh({ rebuildTables: false });
   });
   els.frameHeadingRef.addEventListener('change', () => {
     if (state.site === null) return;
     state.site.local_frame.heading_reference = els.frameHeadingRef.value || null;
+    commit('Change heading reference');
     refresh({ rebuildTables: false });
   });
 
@@ -185,6 +199,7 @@ function wireEvents() {
   els.altRef.addEventListener('change', () => {
     if (state.site === null) return;
     state.site.safety_area.altitude_reference = els.altRef.value || null;
+    commit('Change altitude reference');
     refresh({ rebuildTables: true });
   });
 
@@ -196,6 +211,7 @@ function wireEvents() {
   });
   els.fitView.addEventListener('click', () => state.mapView?.fit());
 
+  els.siteName.addEventListener('change', () => commit('Rename site'));
   els.siteId.addEventListener('input', () => {
     if (state.site === null) return;
     const value = els.siteId.value.trim();
@@ -204,6 +220,51 @@ function wireEvents() {
     else state.site.site_id = value;
     refresh({ rebuildTables: false });
   });
+  els.siteId.addEventListener('change', () => commit('Change site id'));
+
+  // A text or numeric field fires an input event per keystroke. The model is
+  // updated on every one of them so validation stays live, but only the
+  // committed value becomes a history entry.
+  for (const input of [els.originLat, els.originLon, els.originAlt, els.minAlt, els.maxAlt]) {
+    input.addEventListener('change', () => commit(`Change ${input.id.replace(/-/g, ' ')}`));
+  }
+
+  attachHistoryControls({
+    history: state.history,
+    undoButton: els.undo,
+    redoButton: els.redo,
+    apply: (site, direction, label) => {
+      state.site = ensureContainers(site);
+      state.dirty = true;
+      renderFields();
+      refresh({ rebuildTables: true });
+      setStatus(
+        els.status,
+        `${direction === 'undo' ? 'Undid' : 'Redid'}: ${label ?? 'the last change'}.`,
+        'info'
+      );
+    },
+  });
+}
+
+/**
+ * Record the current site as one undoable operation.
+ *
+ * Called after an edit has already been applied to the model, so the snapshot
+ * is the state to come back *to* when this operation is redone.
+ *
+ * @param {string} label what the user did
+ * @param {{coalesceKey?: string}} [options]
+ */
+function commit(label, options = {}) {
+  if (state.site === null) return;
+  state.history.push(state.site, label, options);
+  markDirty();
+}
+
+function markDirty() {
+  state.dirty = true;
+  els.ctxDirty.hidden = false;
 }
 
 /**
@@ -260,6 +321,11 @@ function adoptSite(site, sourceLabel) {
   }
   state.site = ensureContainers(site);
   state.sourceLabel = sourceLabel;
+  // A new document gets a new history: undo must not reach back into the file
+  // that was open before this one.
+  state.history.reset(state.site, `Loaded ${sourceLabel}`);
+  state.dirty = false;
+  els.ctxDirty.hidden = true;
   setContext(els.ctxSource, sourceLabel);
   renderFields();
   refresh({ rebuildTables: true, fitMap: true });
@@ -349,11 +415,11 @@ function renderVertexTable() {
     row.append(el('td', { class: 'num' }, [numberCell(vertex.east_m, (value) => {
       vertex.east_m = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit safety vertex ${index} east`)]));
     row.append(el('td', { class: 'num' }, [numberCell(vertex.north_m, (value) => {
       vertex.north_m = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit safety vertex ${index} north`)]));
 
     const remove = el('button', {
       type: 'button',
@@ -367,6 +433,7 @@ function renderVertexTable() {
         : `Remove vertex ${index}`,
       onClick: () => {
         ring.splice(index, 1);
+        commit(`Remove safety vertex ${index}`);
         refresh({ rebuildTables: true });
       },
     });
@@ -397,20 +464,22 @@ function renderMissionTable() {
       point.id = idInput.value;
       refresh({ rebuildTables: false });
     });
+    idInput.addEventListener('change', () => commit('Rename mission point'));
     row.append(el('td', {}, [idInput]));
 
+    const who = point.id ?? index;
     row.append(el('td', { class: 'num' }, [numberCell(point.east_m, (value) => {
       point.east_m = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit ${who} east`)]));
     row.append(el('td', { class: 'num' }, [numberCell(point.north_m, (value) => {
       point.north_m = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit ${who} north`)]));
     row.append(el('td', { class: 'num' }, [numberCell(point.altitude_m, (value) => {
       point.altitude_m = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit ${who} altitude`)]));
 
     const refSelect = el('select');
     fillSelect(refSelect, ALTITUDE_REFERENCES, 'not set');
@@ -419,6 +488,7 @@ function renderMissionTable() {
       : '';
     refSelect.addEventListener('change', () => {
       point.altitude_reference = refSelect.value || null;
+      commit(`Change ${who} altitude reference`);
       refresh({ rebuildTables: false });
     });
     row.append(el('td', {}, [refSelect]));
@@ -428,7 +498,7 @@ function renderMissionTable() {
     row.append(el('td', { class: 'num' }, [numberCell(point.heading_deg, (value) => {
       point.heading_deg = value;
       refresh({ rebuildTables: false });
-    })]));
+    }, `Edit ${who} heading`)]));
 
     row.append(el('td', {}, [
       el('button', {
@@ -438,7 +508,9 @@ function renderMissionTable() {
         'aria-label': `Remove mission point ${point.id ?? index}`,
         title: `Remove mission point ${point.id ?? index}`,
         onClick: () => {
+          const removed = point.id ?? index;
           points.splice(index, 1);
+          commit(`Remove mission point ${removed}`);
           refresh({ rebuildTables: true });
         },
       }),
@@ -458,10 +530,16 @@ function renderMissionTable() {
 
 /**
  * A numeric table cell input. Empty input yields null.
+ *
+ * The model is updated on every keystroke so that validation stays live, but
+ * only the committed value (on blur or Enter) becomes a history entry —
+ * otherwise typing "123" would leave three separate things to undo.
+ *
  * @param {unknown} value
  * @param {(value: number|null) => void} apply
+ * @param {string} label what this edit is called in the history
  */
-function numberCell(value, apply) {
+function numberCell(value, apply, label) {
   const input = el('input', {
     type: 'number',
     step: 'any',
@@ -470,6 +548,9 @@ function numberCell(value, apply) {
     size: '8',
   });
   input.addEventListener('input', () => apply(readNumberInput(input)));
+  if (label !== undefined) {
+    input.addEventListener('change', () => commit(label));
+  }
   return input;
 }
 
@@ -564,11 +645,14 @@ function initMap() {
   try {
     state.mapView = new SiteMapView(els.map, {
       editable: true,
+      // Leaflet reports a drag once, on dragend, so each of these is already
+      // one gesture and becomes exactly one history entry.
       onMissionPointMoved: (id, enu) => {
         const point = state.site?.mission_points.find((candidate) => candidate.id === id);
         if (!point) return;
         point.east_m = enu.east_m;
         point.north_m = enu.north_m;
+        commit(`Move mission point ${id}`);
         refresh({ rebuildTables: true });
       },
       onVertexMoved: (index, enu) => {
@@ -576,6 +660,7 @@ function initMap() {
         if (!vertex) return;
         vertex.east_m = enu.east_m;
         vertex.north_m = enu.north_m;
+        commit(`Move safety vertex ${index}`);
         refresh({ rebuildTables: true });
       },
       onTileError: () => {
@@ -636,6 +721,7 @@ function addVertex() {
   } else {
     ring.push({ east_m: 0, north_m: 0 });
   }
+  commit('Add safety vertex');
   refresh({ rebuildTables: true });
 }
 
@@ -654,6 +740,7 @@ function addMissionPoint() {
     altitude_reference: null,
     heading_deg: null,
   });
+  commit('Add mission point');
   refresh({ rebuildTables: true });
   setStatus(
     els.status,
@@ -697,6 +784,8 @@ function downloadSite() {
     const document_ = buildSiteDocument(state.site);
     const filename = `${sanitizeFilenamePart(state.site.name ?? 'site')}.site.json`;
     downloadJson(filename, document_);
+    state.dirty = false;
+    els.ctxDirty.hidden = true;
     setStatus(els.status, `Downloaded "${filename}".`, 'ok');
   } catch (err) {
     reportError(els.status, err, 'Export failed');
