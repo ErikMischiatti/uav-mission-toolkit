@@ -35,6 +35,8 @@ This is not a flight-safety system. See [SECURITY.md](SECURITY.md).
   loaded as read-only context: it is drawn behind the path, it defines the local
   frame, and the trajectory is checked against its safety area and altitude band
   as it is drawn.
+- Undo and redo in both editors, from one shared history, with the usual
+  keyboard shortcuts. A drag is a single undoable operation.
 - Altitude sweep that generates a range of altitude variants and verifies each
   generated file by parsing it back and comparing it to the source.
 - Project-owned JSON and CSV formats, versioned from the first release and
@@ -300,7 +302,7 @@ Roughly in the order it would make sense to do the work:
    behind the existing two-function interface.
 4. Import of existing site and trajectory files from common generic formats
    (GeoJSON, plain waypoint CSV) with an explicit mapping step.
-5. Undo/redo and draft persistence in `localStorage`.
+5. Draft persistence in `localStorage`, so a reload does not lose work.
 6. A printable mission summary.
 
 ## Contributing

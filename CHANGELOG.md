@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   id, name, origin and frame a trajectory was drawn in, so a file says which
   coordinate system it belongs to without being bound to a filename
 - `site_id` on a site definition: an optional, explicit, stable identifier
+- **Undo and redo**, from one shared history under `shared/js/history.js`, in
+  the site editor and the trajectory editor. Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and
+  Ctrl/Cmd+Y, plus toolbar buttons that disable themselves and name the
+  operation they would reverse. A drag is one operation, the redo branch is
+  discarded on the next edit, history is bounded, and loading a document resets
+  it so undo cannot walk back into the previous file
 - A shared application shell across all four tools: a header, a context bar
   stating what is loaded, which frame is active, the altitude reference and a
   one-line validation verdict, a scrolling control sidebar, a workspace that
@@ -34,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type tokens with light and dark values, one control height, a four-level
   button hierarchy, and geometry colours shared by the map and the canvas
 - Contextual help for ENU, AGL, AMSL, ATO and the heading convention
-- New test groups: `vendor`, `ui`, `forms`, `site_aware`
+- New test groups: `vendor`, `ui`, `forms`, `site_aware`, `history`
 
 ### Changed
 

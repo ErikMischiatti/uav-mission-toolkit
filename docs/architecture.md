@@ -21,7 +21,8 @@ docs/                   this directory
 The one hard rule: **geometry, coordinate conversion, file parsing and
 validation live in `shared/js/` and nowhere else.** A tool's `app.js` is allowed
 to know about the DOM and about its own workflow. It is not allowed to
-re-implement a distance formula, a CSV parser or a validation rule.
+re-implement a distance formula, a CSV parser, a validation rule or an undo
+stack.
 
 The same applies to the look of the thing. Every page uses one shell — header,
 context bar, sidebar, workspace, status bar — defined once in
@@ -75,11 +76,29 @@ messages in `shared/js/io.js` say so explicitly.
 | `trajectory.js` | The trajectory format: CSV columns, document construction, path headings, metrics. |
 | `site_map.js` | Leaflet rendering of a site, in editable or read-only mode. |
 | `ui.js` | DOM helpers, findings rendering, the validation verdict, the context bar, status messages, contextual help, global error handlers. |
+| `history.js` | Undo/redo. One implementation, used by every tool that edits a document. |
 
 Dependency direction is one way: `geo.js` depends on nothing; `validation.js`
 and `trajectory.js` depend on `geo.js` and `io.js`; `site_map.js` depends on
 `geo.js`, `io.js` and `ui.js`; every tool depends on the shared layer and never
 the reverse. There are no cycles.
+
+### Why undo/redo stores snapshots
+
+`history.js` keeps a deep copy of the document per operation rather than a pair
+of inverse commands. The documents here are small plain-JSON objects, so the
+memory is irrelevant, and the choice removes a class of bug that matters for
+this project in particular: an inverse command that is subtly wrong corrupts a
+document in a way nobody notices until it is flown, whereas a snapshot either
+restores the document exactly or fails loudly.
+
+The cost is that an entry records *that* something changed, not *what*. Each one
+therefore carries a human label, which is what the toolbar shows.
+
+A drag would otherwise leave one entry per pointer event. Callers either commit
+once at the end of the gesture, or pass a `coalesceKey` so consecutive pushes
+carrying the same key replace each other. Loading a document calls `reset()`, so
+undo can never walk backwards out of the file the user is looking at.
 
 ### Why the trajectory editor cannot edit a site
 
