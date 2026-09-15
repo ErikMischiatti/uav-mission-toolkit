@@ -70,6 +70,14 @@
             <label for="site-file">Open a local site.json</label>
             <input id="site-file" type="file" accept="application/json,.json" />
           </div>
+          <div class="field">
+            <label for="geojson-file">Import geometry from GeoJSON</label>
+            <input id="geojson-file" type="file" accept=".geojson,.json,application/geo+json,application/json" />
+            <p class="panel__hint">
+              Opens a mapping step; nothing is imported until you confirm what each feature
+              becomes.
+            </p>
+          </div>
         </section>
 
         <section class="panel">
@@ -229,6 +237,38 @@
         </div>
       </div>
     </main>
+
+    <dialog id="import-dialog" class="modal" aria-labelledby="import-title">
+      <form method="dialog" class="modal__body">
+        <div class="modal__header">
+          <h2 id="import-title">Import GeoJSON</h2>
+          <p>
+            Choose what each feature becomes. Nothing is imported until you confirm: a polygon in
+            a file is a polygon, and only you can say whether it is this site's safety area.
+          </p>
+        </div>
+        <div class="modal__content">
+          <div id="import-findings"></div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Feature</th>
+                  <th scope="col">Geometry</th>
+                  <th scope="col">Becomes</th>
+                </tr>
+              </thead>
+              <tbody id="import-rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal__footer">
+          <span id="import-note" class="modal__note"></span>
+          <button type="submit" value="cancel">Cancel</button>
+          <button id="import-confirm" type="submit" value="import" class="primary">Import</button>
+        </div>
+      </form>
+    </dialog>
 
     <div class="app-statusbar">
       <p id="status" class="status status--info">Loading&hellip;</p>

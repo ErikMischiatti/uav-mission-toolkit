@@ -14,6 +14,12 @@
  */
 
 import { enuToGeodetic, verticesMean } from '../shared/js/geo.js';
+import {
+  IMPORT_TARGETS,
+  applyImportPlan,
+  parseGeoJson,
+  usableOrigin,
+} from '../shared/js/geojson.js';
 import { History, attachHistoryControls } from '../shared/js/history.js';
 import {
   downloadJson,
@@ -118,6 +124,12 @@ function cacheElements() {
   els.siteId = must('#site-id');
   els.ctxDirty = must('#ctx-dirty');
 
+  els.geojsonFile = must('#geojson-file');
+  els.importDialog = must('#import-dialog');
+  els.importRows = must('#import-rows');
+  els.importFindings = must('#import-findings');
+  els.importNote = must('#import-note');
+  els.importConfirm = must('#import-confirm');
 
   els.ctxSource = must('#ctx-source');
   els.ctxFrame = must('#ctx-frame');
@@ -228,6 +240,16 @@ function wireEvents() {
   for (const input of [els.originLat, els.originLon, els.originAlt, els.minAlt, els.maxAlt]) {
     input.addEventListener('change', () => commit(`Change ${input.id.replace(/-/g, ' ')}`));
   }
+
+  els.geojsonFile.addEventListener('change', (event) => {
+    const [file] = event.target.files ?? [];
+    if (file) openGeoJsonImport(file);
+    // Clear the input so re-picking the same file fires another change event.
+    event.target.value = '';
+  });
+  els.importDialog.addEventListener('close', () => {
+    if (els.importDialog.returnValue === 'import') runImport();
+  });
 
   attachHistoryControls({
     history: state.history,
@@ -760,6 +782,165 @@ function nextPointId() {
 function round(value) {
   const factor = 10 ** COORDINATE_DECIMALS;
   return Math.round(value * factor) / factor;
+}
+
+// --- GeoJSON import ---------------------------------------------------------
+
+/**
+ * Pending import: the parsed features and the mapping the user is choosing.
+ * Cleared when the dialog closes, so a cancelled import leaves nothing behind.
+ * @type {{features: Array<object>, plan: Record<number, string>}|null}
+ */
+let pendingImport = null;
+
+/**
+ * Read a GeoJSON file and open the mapping dialog.
+ *
+ * Parsing deliberately does not change anything. The whole point of this step
+ * is that the user sees what is in the file and says what each feature means
+ * before any of it becomes site geometry.
+ *
+ * @param {File} file
+ */
+async function openGeoJsonImport(file) {
+  try {
+    if (state.site === null) {
+      setStatus(els.status, 'Load or start a site before importing geometry into it.', 'warning');
+      return;
+    }
+    const text = await readFileAsText(file);
+    const { features, findings } = parseGeoJson(parseJson(text, file.name), file.name);
+
+    pendingImport = {
+      features,
+      // Start with everything ignored. A default of "import it" would be
+      // exactly the silent decision this workflow exists to avoid.
+      plan: Object.fromEntries(features.map((feature) => [feature.index, 'ignore'])),
+    };
+
+    renderImportDialog(findings, file.name);
+    els.importDialog.showModal();
+  } catch (err) {
+    pendingImport = null;
+    reportError(els.status, err, `Could not read "${file.name}"`);
+  }
+}
+
+function renderImportDialog(findings, sourceLabel) {
+  renderFindings(els.importFindings, findings, {
+    emptyMessage: `Read "${sourceLabel}".`,
+  });
+
+  clear(els.importRows);
+  const { features, plan } = pendingImport;
+
+  if (features.length === 0) {
+    els.importRows.append(
+      el('tr', {}, [
+        el('td', { colspan: '3', class: 'is-empty', text: 'No features to import.' }),
+      ])
+    );
+  }
+
+  for (const feature of features) {
+    const row = el('tr', { class: feature.supported ? '' : 'is-unsupported' });
+    row.append(el('td', { text: feature.label }));
+    row.append(el('td', { class: 'mono', text: feature.geometryType ?? NO_VALUE }));
+
+    if (!feature.supported) {
+      row.append(el('td', {}, [el('span', { class: 'reason', text: feature.reason })]));
+      els.importRows.append(row);
+      continue;
+    }
+
+    const select = el('select', { 'aria-label': `What "${feature.label}" becomes` });
+    for (const target of IMPORT_TARGETS) {
+      select.append(el('option', { value: target, text: describeTarget(target, feature) }));
+    }
+    select.value = 'ignore';
+    select.addEventListener('change', () => {
+      plan[feature.index] = select.value;
+      updateImportNote();
+    });
+    row.append(el('td', {}, [select]));
+    els.importRows.append(row);
+  }
+
+  updateImportNote();
+}
+
+/** Only offer mappings that make sense for this geometry. */
+function describeTarget(target, feature) {
+  const isPoint = feature.position !== null;
+  switch (target) {
+    case 'ignore':
+      return 'Do not import';
+    case 'safety_area':
+      return isPoint ? 'Safety area (needs a polygon)' : 'Safety area';
+    case 'mission_point':
+      return isPoint ? 'Mission point' : 'Mission point (needs a point)';
+    case 'origin':
+      return isPoint ? 'Site origin' : 'Site origin (needs a point)';
+    default:
+      return target;
+  }
+}
+
+function updateImportNote() {
+  const { plan } = pendingImport;
+  const selected = Object.values(plan).filter((target) => target !== 'ignore').length;
+  const needsOrigin = usableOrigin(state.site?.origin) === null;
+  const hasOrigin = Object.values(plan).includes('origin');
+
+  if (selected === 0) {
+    els.importNote.textContent = 'Nothing selected yet.';
+  } else if (needsOrigin && !hasOrigin) {
+    els.importNote.textContent =
+      'This site has no origin. Mark one point as the site origin, or set an origin first.';
+  } else {
+    els.importNote.textContent = `${selected} feature(s) selected.`;
+  }
+  els.importConfirm.disabled = selected === 0;
+}
+
+/** Apply the confirmed mapping, as one undoable operation. */
+function runImport() {
+  const request = pendingImport;
+  pendingImport = null;
+  if (request === null || state.site === null) return;
+
+  const { site, findings, summary } = applyImportPlan({
+    site: state.site,
+    features: request.features,
+    plan: request.plan,
+  });
+
+  if (site === null) {
+    renderFindings(els.validation, findings);
+    const first = findings.find((f) => f.severity === 'error') ?? findings[0];
+    setStatus(els.status, `Import refused: ${first?.message ?? 'nothing was imported.'}`, 'error');
+    return;
+  }
+
+  state.site = ensureContainers(site);
+  commit('Import GeoJSON');
+  renderFields();
+  refresh({ rebuildTables: true, fitMap: true });
+
+  const parts = [];
+  if (summary.originSet) parts.push('set the origin');
+  if (summary.safetyAreaVertices > 0) {
+    parts.push(`imported a ${summary.safetyAreaVertices}-vertex safety area`);
+  }
+  if (summary.missionPoints > 0) parts.push(`added ${summary.missionPoints} mission point(s)`);
+
+  const warnings = findings.filter((f) => f.severity !== 'info');
+  setStatus(
+    els.status,
+    `Imported: ${parts.join(', ')}.` +
+      (warnings.length > 0 ? ` ${warnings.map((f) => f.message).join(' ')}` : ''),
+    warnings.length > 0 ? 'warning' : 'ok'
+  );
 }
 
 // --- export -----------------------------------------------------------------
