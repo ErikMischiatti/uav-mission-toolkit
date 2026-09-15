@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map drops the tile layer, falls back to a graticule background with a
   "Map tiles unavailable — geometry only" badge, and keeps every geometry and
   editing feature working
+- **The trajectory editor is site-aware.** A site can be chosen from the example
+  manifest or opened from a local `site.json`, or omitted entirely to work in an
+  abstract local plane. The site is read-only context: it is drawn behind the
+  trajectory, it sets the local frame, and the trajectory is continuously
+  checked against it — points outside the safety area, segments that leave it
+  between two interior waypoints, altitudes outside the site band, altitude
+  reference mismatch, frame and heading-reference incompatibility
+- `site_context` on a trajectory document: an optional block recording the site
+  id, name, origin and frame a trajectory was drawn in, so a file says which
+  coordinate system it belongs to without being bound to a filename
+- `site_id` on a site definition: an optional, explicit, stable identifier
 - A shared application shell across all four tools: a header, a context bar
   stating what is loaded, which frame is active, the altitude reference and a
   one-line validation verdict, a scrolling control sidebar, a workspace that
@@ -23,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type tokens with light and dark values, one control height, a four-level
   button hierarchy, and geometry colours shared by the map and the canvas
 - Contextual help for ENU, AGL, AMSL, ATO and the heading convention
-- New test groups: `vendor`, `ui`, `forms`
+- New test groups: `vendor`, `ui`, `forms`, `site_aware`
 
 ### Changed
 
@@ -38,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it validates against a grid anchored at `min`
 - The validation panel shows a quiet line rather than a green card when there is
   nothing to report
+
+### Fixed
+
+- Site containment findings in the trajectory editor no longer stay hidden
+  behind unrelated errors such as an unset altitude reference
+- A tile failure is no longer overwritten in the status line by the file-load
+  message that usually follows it
 
 ### Added in the initial baseline
 

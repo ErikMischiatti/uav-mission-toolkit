@@ -31,11 +31,16 @@ This is not a flight-safety system. See [SECURITY.md](SECURITY.md).
 - Read-only site viewer showing local ENU and WGS84 coordinates side by side,
   plus dimensions and area.
 - Trajectory editor with straight, circle, racetrack and figure-eight presets,
-  draggable control points, path length and a duration estimate.
+  draggable control points, path length and a duration estimate. A site can be
+  loaded as read-only context: it is drawn behind the path, it defines the local
+  frame, and the trajectory is checked against its safety area and altitude band
+  as it is drawn.
 - Altitude sweep that generates a range of altitude variants and verifies each
   generated file by parsing it back and comparing it to the source.
 - Project-owned JSON and CSV formats, versioned from the first release and
-  documented in [docs/file_formats.md](docs/file_formats.md).
+  documented in [docs/file_formats.md](docs/file_formats.md). A trajectory can
+  record which site's local frame it belongs to, by an explicit id — never by a
+  filename.
 - One application shell across all four tools: a context bar always states what
   is loaded, which frame is active, what altitudes are measured against, and
   whether the document is valid.
@@ -289,16 +294,14 @@ tool:
 Roughly in the order it would make sense to do the work:
 
 1. Browser-level coverage for the DOM modules, without taking on a dependency.
-2. Load a site into the trajectory editor, so trajectories can be validated
-   against a real safety polygon while they are being drawn.
-3. Per-point altitude profiles, including a climb/descent-aware duration
+2. Per-point altitude profiles, including a climb/descent-aware duration
    estimate.
-4. Replace the tangent-plane approximation with a proper geodesy implementation
+3. Replace the tangent-plane approximation with a proper geodesy implementation
    behind the existing two-function interface.
-5. Import of existing site and trajectory files from common generic formats
+4. Import of existing site and trajectory files from common generic formats
    (GeoJSON, plain waypoint CSV) with an explicit mapping step.
-6. Undo/redo and draft persistence in `localStorage`.
-7. A printable mission summary.
+5. Undo/redo and draft persistence in `localStorage`.
+6. A printable mission summary.
 
 ## Contributing
 

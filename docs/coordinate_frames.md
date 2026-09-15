@@ -163,3 +163,27 @@ Field names carry their unit as a suffix so that a mis-read is a typo rather
 than a silent unit error. There are no kilometres, knots, feet or km/h anywhere
 in the data model. The trajectory validator warns when a speed exceeds 60 m/s,
 which is the most likely sign that someone entered km/h.
+
+
+## Which site is a trajectory in?
+
+A trajectory carries no origin. Its numbers are metres in *some* site's local
+ENU frame, and the same list of points means a different place on the ground in
+a different frame. Two things keep that from being ambiguous:
+
+- A site may declare an explicit **`site_id`**, separate from its human-readable
+  name.
+- A trajectory may record a **`site_context`** block naming that id, the site
+  name, the origin and the frame. See
+  [file_formats.md](file_formats.md#site_context).
+
+Both are optional, and neither is a path or a filename. Nothing in this project
+reads meaning out of a filename, so a trajectory is never bound to a file on
+somebody's disk — it records an id, and whoever loads it still has to supply the
+site. The id is only there so a mismatch can be *noticed*: loading a trajectory
+against a site whose id disagrees is reported as a warning.
+
+A trajectory with no `site_context` is still valid. It simply does not claim a
+frame it cannot back up, and whoever loads it has to know which site it belongs
+to by other means.
+

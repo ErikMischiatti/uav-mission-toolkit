@@ -81,6 +81,14 @@ and `trajectory.js` depend on `geo.js` and `io.js`; `site_map.js` depends on
 `geo.js`, `io.js` and `ui.js`; every tool depends on the shared layer and never
 the reverse. There are no cycles.
 
+### Why the trajectory editor cannot edit a site
+
+The trajectory editor loads a site as **read-only context**. It draws it, it
+expresses the trajectory in its frame, and it validates against it — and nothing
+in `trajectory_editor/` writes to the site object. Two places that can edit the
+same document is how two places end up disagreeing about it; there is one site
+editor, and it is `site_editor/`.
+
 `geo.js` is isolated on purpose. Replacing the flat-earth approximation with
 GeographicLib or proj4js means rewriting exactly two functions —
 `geodeticToEnu()` and `enuToGeodetic()` — and nothing else.

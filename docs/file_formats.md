@@ -26,6 +26,7 @@ Conventions used below and enforced by
 {
   "schema_version": 1,
   "name": "demo_site",
+  "site_id": "demo_site",
   "description": "Optional free text for humans.",
   "created_utc": "2026-09-15T00:00:00Z",
   "origin": {
@@ -66,6 +67,7 @@ Conventions used below and enforced by
 | --- | --- | --- | --- |
 | `schema_version` | integer | yes | Must be `1`. |
 | `name` | string | yes | Non-empty. Used for the download filename; never parsed for meaning. |
+| `site_id` | string | no | A stable identifier for this site, e.g. `north_field`. Plain characters (`A-Za-z0-9._-`) are recommended. This is what a trajectory records to say which frame it belongs to. Distinct from `name`, which is for humans and may change. |
 | `description` | string | no | Free text for humans. |
 | `created_utc` | string | no | ISO 8601 UTC timestamp. Not validated. |
 | `origin.latitude_deg` | number | yes | −90 … 90, WGS84. |
@@ -175,11 +177,61 @@ reference, which the CSV cannot.
 | `points[].altitude_m` | number | yes | |
 | `points[].heading_deg` | number | yes | [0, 360) clockwise from true north. |
 | `points[].speed_mps` | number | yes | Per-point speed. v0.1 writes the same value on every point. |
+| `site_context` | object | no | Which site's local frame these coordinates are in. See below. |
 
-Deliberate omission: a trajectory does **not** reference a site by name or path.
-Binding a trajectory to a site by filename would be exactly the kind of implicit
-coupling this project avoids. The site is supplied by whoever loads the
-trajectory.
+### `site_context`
+
+A trajectory has no origin of its own: its numbers are metres in *some* site's
+local frame, and without knowing which, they cannot be placed on the ground.
+`site_context` records that, so the file is self-describing:
+
+```json
+"site_context": {
+  "site_id": "demo_site",
+  "site_name": "demo_site",
+  "origin": {
+    "latitude_deg": 48.0,
+    "longitude_deg": 11.0,
+    "altitude_amsl_m": 520.0
+  },
+  "local_frame": { "type": "ENU", "heading_reference": "true_north" }
+}
+```
+
+| Path | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `site_context.site_id` | string | no | The site's explicit `site_id`. |
+| `site_context.site_name` | string | no | The site's human-readable name. |
+| `site_context.origin.latitude_deg` | number | no | −90 … 90, WGS84. |
+| `site_context.origin.longitude_deg` | number | no | −180 … 180, WGS84. |
+| `site_context.origin.altitude_amsl_m` | number | no | Written only when the site states one. |
+| `site_context.local_frame.type` | string | no | `"ENU"`. |
+| `site_context.local_frame.heading_reference` | string | no | `"true_north"`. |
+
+Still a deliberate omission: there is **no path and no filename** here. A
+trajectory is not bound to a file on anybody's disk. `site_id` is an explicit
+field of the site document, and a consumer still has to be handed the site
+itself; the id only lets it check that it was handed the right one.
+
+Every member is optional, and the whole block is optional: a trajectory drawn
+without a site legitimately has none, and then simply does not claim a frame it
+cannot back up.
+
+### Schema compatibility
+
+`site_context` was added after the format shipped and **does not bump
+`schema_version`, which stays `1`.** It is purely additive and purely optional:
+
+- A version-1 trajectory written before it existed has no `site_context`, and is
+  still valid. Nothing is migrated and nothing is defaulted.
+- A consumer that does not know the field ignores it, and loses only the
+  information about which site the trajectory belongs to — which is exactly the
+  information it never had before.
+- A `site_context` that is *present but malformed* is an error, not a warning.
+  An absent block says "I do not know which frame this is"; a broken one looks
+  authoritative while being wrong, which is worse.
+
+The same applies to the site's `site_id`.
 
 ### Validation rules
 
@@ -190,9 +242,25 @@ Implemented in `validateTrajectory()`, optionally against a loaded site:
 - `speed_mps` must be positive; above 60 m/s produces a units warning.
 - At least two points, each with finite coordinates and altitude, and a heading
   in range if present.
-- With a site supplied: points outside the safety polygon are an error, and a
-  mismatch between the trajectory's and the site's altitude reference is a
-  warning (limits are then not checked).
+With a site supplied, `validateAgainstSite()` additionally reports:
+
+- **Points outside the safety polygon** — one error carrying the count.
+- **Segments that leave the safety polygon** between two interior waypoints. For
+  a concave area this is a different question from "is every waypoint inside",
+  and it is the one that matters: a straight leg between two points in different
+  arms of an L-shaped area can cross the notch entirely.
+- **Altitudes below `min_altitude_m` or above `max_altitude_m`**, but only when
+  the trajectory and the site use the *same* altitude reference.
+- **An altitude-reference mismatch**, as a warning. The band check is then
+  skipped rather than performed on incomparable numbers; converting between AGL,
+  AMSL and ATO needs information this toolkit does not have.
+- **Frame incompatibility** — an error when the site's `local_frame.type` is not
+  `ENU`, or when its `heading_reference` differs from the trajectory's.
+- **A `site_context.site_id` that disagrees with the loaded site**, as a warning.
+
+These checks also run while a trajectory is still incomplete, so "your path
+leaves the safety area" is not hidden behind "you have not chosen an altitude
+reference yet".
 
 ---
 
@@ -311,3 +379,4 @@ column differed.
 
 Filenames here are labels. Nothing in the toolkit reads an altitude back out of
 a filename.
+
