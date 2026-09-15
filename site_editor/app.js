@@ -235,9 +235,19 @@ function adoptSite(site, sourceLabel) {
   renderFields();
   refresh({ rebuildTables: true, fitMap: true });
 
+  // The tile state is asked for rather than pushed, because a tile failure
+  // usually happens before the file finishes loading and would otherwise be
+  // overwritten by this very message.
+  const tileNote = state.mapView?.tileNote() ?? '';
   const findings = validateSite(state.site);
   if (hasErrors(findings)) {
-    setStatus(els.status, `Loaded "${sourceLabel}" with validation errors, see below.`, 'warning');
+    setStatus(
+      els.status,
+      `Loaded "${sourceLabel}" with validation errors, see below.${tileNote}`,
+      'warning'
+    );
+  } else if (tileNote !== '') {
+    setStatus(els.status, `Loaded "${sourceLabel}".${tileNote}`, 'warning');
   } else {
     setStatus(els.status, `Loaded "${sourceLabel}".`, 'ok');
   }

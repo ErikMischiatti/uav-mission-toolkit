@@ -161,12 +161,16 @@ function adoptSite(site, sourceLabel) {
   renderMissionTable(site);
   if (state.mapView !== null) state.mapView.setSite(site, { fit: true });
 
+  // Asked for rather than pushed: a tile failure usually lands before the file
+  // finishes loading, and would otherwise be overwritten by this message.
+  const tileNote = state.mapView?.tileNote() ?? '';
+  const invalid = hasErrors(findings);
   setStatus(
     els.status,
-    hasErrors(findings)
-      ? `Loaded "${sourceLabel}". The definition has validation errors, see below.`
-      : `Loaded "${sourceLabel}". No validation errors.`,
-    hasErrors(findings) ? 'warning' : 'ok'
+    invalid
+      ? `Loaded "${sourceLabel}". The definition has validation errors, see below.${tileNote}`
+      : `Loaded "${sourceLabel}". No validation errors.${tileNote}`,
+    invalid || tileNote !== '' ? 'warning' : 'ok'
   );
 }
 

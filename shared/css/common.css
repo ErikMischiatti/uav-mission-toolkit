@@ -496,6 +496,32 @@ table.data tr.is-invalid td {
   font-family: var(--font-ui);
 }
 
+/*
+ * Tile-less fallback. Leaflet is vendored and works offline, but the tiles are
+ * fetched from the network. When they cannot be loaded the map keeps every
+ * geometry and editing feature and gets a plain graticule background, so the
+ * area still reads as a map rather than as a failed image.
+ *
+ * Leaflet puts .leaflet-container on the element it was given, so this is the
+ * same node as .map — a descendant selector would never match.
+ */
+.map--tileless.leaflet-container {
+  background-color: var(--surface-alt);
+  background-image:
+    linear-gradient(to right, var(--border-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-strong) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.map-tile-notice {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  color: var(--warning);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
 /* --- launcher (root index.html) ----------------------------------------- */
 
 .launcher {
