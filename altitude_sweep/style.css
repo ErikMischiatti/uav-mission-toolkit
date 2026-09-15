@@ -1,0 +1,41 @@
+/* Altitude sweep specific styling: variant table badges and the preview. */
+
+.badge {
+  border-radius: 10px;
+  font-size: 11px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.badge--ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.badge--error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+#variant-rows tr {
+  cursor: pointer;
+}
+
+#variant-rows tr.is-selected td {
+  background: var(--info-bg);
+}
+
+/* The one column a sweep is allowed to change. */
+.cell--changed {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+#preview-rows td {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+#preview-label {
+  margin-bottom: var(--space-2);
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "description": "Index of the example data shipped with the toolkit. Tools read this file instead of scraping an HTTP directory listing, so the examples work on any static file server. All paths are relative to this manifest.",
+  "sites": [
+    {
+      "id": "demo_site",
+      "name": "Demo Site (fictional)",
+      "site_path": "demo_site/site.json",
+      "notes": "Approximately 235 m by 215 m safety area with four mission points. Entirely synthetic.",
+      "trajectories": [
+        {
+          "id": "demo_racetrack",
+          "name": "Demo racetrack, 40 m AGL",
+          "csv_path": "demo_site/example_trajectory.csv",
+          "altitude_reference": "AGL",
+          "frame": "local_enu",
+          "closed": true,
+          "notes": "Closed racetrack, 100 m straights and 35 m turn radius, flown at 5 m/s. The altitude reference is recorded here because the CSV format itself cannot carry it."
+        }
+      ]
+    }
+  ]
+}

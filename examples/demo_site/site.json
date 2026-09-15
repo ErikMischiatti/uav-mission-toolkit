@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "name": "demo_site",
+  "description": "Fictional demo site used for development and documentation. The origin is a round-numbered coordinate chosen because it is obviously synthetic; it does not correspond to any real UAV operating location, and none of the geometry below was derived from a real site.",
+  "created_utc": "2026-09-15T00:00:00Z",
+  "origin": {
+    "latitude_deg": 48.0,
+    "longitude_deg": 11.0,
+    "altitude_amsl_m": 520.0
+  },
+  "local_frame": {
+    "type": "ENU",
+    "heading_reference": "true_north"
+  },
+  "safety_area": {
+    "horizontal": [
+      { "east_m": -110, "north_m": -95 },
+      { "east_m": 105, "north_m": -100 },
+      { "east_m": 120, "north_m": 60 },
+      { "east_m": 40, "north_m": 115 },
+      { "east_m": -70, "north_m": 110 },
+      { "east_m": -115, "north_m": 20 }
+    ],
+    "min_altitude_m": 15,
+    "max_altitude_m": 100,
+    "altitude_reference": "AGL"
+  },
+  "mission_points": [
+    {
+      "id": "takeoff_pad",
+      "east_m": 0,
+      "north_m": 0,
+      "altitude_m": 20,
+      "altitude_reference": "AGL",
+      "heading_deg": 0
+    },
+    {
+      "id": "survey_west",
+      "east_m": -60,
+      "north_m": 50,
+      "altitude_m": 45,
+      "altitude_reference": "AGL",
+      "heading_deg": 90
+    },
+    {
+      "id": "survey_east",
+      "east_m": 60,
+      "north_m": 45,
+      "altitude_m": 45,
+      "altitude_reference": "AGL",
+      "heading_deg": 180
+    },
+    {
+      "id": "hold_south",
+      "east_m": 55,
+      "north_m": -55,
+      "altitude_m": 60,
+      "altitude_reference": "AGL",
+      "heading_deg": 270
+    }
+  ]
+}

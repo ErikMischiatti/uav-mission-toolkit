@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UAV Mission Toolkit</title>
+    <meta
+      name="description"
+      content="A small browser-based toolkit for preparing UAV missions: site editor, site viewer, trajectory editor and altitude sweep."
+    />
+    <link rel="stylesheet" href="shared/css/common.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>UAV Mission Toolkit</h1>
+      <p class="app-header__subtitle">v0.1 &middot; early development</p>
+      <nav>
+        <a href="docs/architecture.md">Architecture</a>
+        <a href="docs/coordinate_frames.md">Coordinate frames</a>
+        <a href="docs/file_formats.md">File formats</a>
+      </nav>
+    </header>
+
+    <main class="launcher">
+      <section>
+        <p>
+          Four small, self-contained tools for preparing UAV missions. Everything runs locally in
+          the browser: there is no backend, no build step and no database. Files are read from and
+          written to your machine, and nothing is uploaded anywhere.
+        </p>
+        <p>
+          Coordinates are handled in one place: WGS84 latitude/longitude for the site origin, a
+          local ENU frame in metres for everything else, and headings in degrees clockwise from
+          true north. Altitudes always travel with an explicit reference (AGL, AMSL or ATO); the
+          toolkit never guesses one.
+        </p>
+      </section>
+
+      <section>
+        <h2>Tools</h2>
+        <div class="tool-grid">
+          <a class="tool-card" href="site_editor/index.html">
+            <h3>Site Editor</h3>
+            <p>Define an operating site on a map and export it as a generic site definition.</p>
+            <ul>
+              <li>Origin, safety polygon and altitude limits</li>
+              <li>Mission points, draggable on the map</li>
+              <li>Live validation, no hidden defaults</li>
+              <li>Download <code>site.json</code></li>
+            </ul>
+          </a>
+
+          <a class="tool-card" href="site_viewer/index.html">
+            <h3>Site Viewer</h3>
+            <p>Read-only look at a site definition for sanity checking before a flight.</p>
+            <ul>
+              <li>Origin, safety area and mission points</li>
+              <li>Local ENU and WGS84 coordinates side by side</li>
+              <li>Dimensions, area and altitude band</li>
+              <li>The same validation rules as the editor</li>
+            </ul>
+          </a>
+
+          <a class="tool-card" href="trajectory_editor/index.html">
+            <h3>Trajectory Editor</h3>
+            <p>Sketch a path in the local plane and export it in a documented, generic format.</p>
+            <ul>
+              <li>Straight, circle, racetrack and figure-eight presets</li>
+              <li>Draggable control points</li>
+              <li>Altitude, target speed, path length and duration</li>
+              <li>Download JSON or CSV</li>
+            </ul>
+          </a>
+
+          <a class="tool-card" href="altitude_sweep/index.html">
+            <h3>Altitude Sweep</h3>
+            <p>Produce altitude variants of a trajectory and prove nothing else moved.</p>
+            <ul>
+              <li>Start, end and step altitude</li>
+              <li>Per-variant preview</li>
+              <li>Round-trip verification of every generated file</li>
+              <li>Individual or bulk download</li>
+            </ul>
+          </a>
+        </div>
+      </section>
+
+      <section>
+        <h2>Running it</h2>
+        <p>
+          The tools use ES modules and <code>fetch</code>, so they need to be served over HTTP.
+          Opening the files directly with <code>file://</code> will not work.
+        </p>
+        <pre class="snippet">python3 -m http.server 8000
+# then open http://localhost:8000</pre>
+      </section>
+
+      <section>
+        <h2>Example data</h2>
+        <p>
+          The repository ships one fictional demo site under <code>examples/</code>, listed in
+          <code>examples/manifest.json</code>. Its coordinates and geometry were invented for this
+          repository and do not correspond to any real operating location.
+        </p>
+      </section>
+
+      <section>
+        <h2>Scope</h2>
+        <p>
+          This is early, experimental software for preparing and inspecting mission data. It is
+          not a flight-safety system, it does not talk to any vehicle, and nothing it produces
+          should be flown without independent review. See <code>SECURITY.md</code>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>UAV Mission Toolkit &middot; MIT licensed &middot; v0.1</p>
+    </footer>
+  </body>
+</html>

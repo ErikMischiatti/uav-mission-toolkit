@@ -1,0 +1,25 @@
+/* Site viewer specific styling. Everything structural lives in shared/css/common.css. */
+
+/* Shown instead of the map when Leaflet could not be loaded. */
+.map--unavailable {
+  align-items: center;
+  color: var(--error);
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  padding: var(--space-5);
+  text-align: center;
+}
+
+/* The mission point table is wide (local coordinates plus WGS84). */
+#mission-rows td {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+@media (min-width: 901px) {
+  .workspace {
+    position: sticky;
+    top: var(--space-4);
+  }
+}

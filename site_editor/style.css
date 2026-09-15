@@ -1,0 +1,34 @@
+/* Site editor specific styling. Everything structural lives in shared/css/common.css. */
+
+/* The vertex and mission tables carry a lot of narrow numeric inputs. */
+#vertex-rows input,
+#mission-rows input {
+  min-width: 68px;
+}
+
+#mission-rows input[type="text"] {
+  min-width: 96px;
+}
+
+#mission-rows select {
+  min-width: 78px;
+}
+
+/* Shown instead of the map when Leaflet could not be loaded. */
+.map--unavailable {
+  align-items: center;
+  color: var(--error);
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  padding: var(--space-5);
+  text-align: center;
+}
+
+/* Keep the map visible while the long sidebar scrolls next to it. */
+@media (min-width: 901px) {
+  .workspace {
+    position: sticky;
+    top: var(--space-4);
+  }
+}

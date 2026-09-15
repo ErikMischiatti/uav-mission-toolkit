@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trajectory Editor &middot; UAV Mission Toolkit</title>
+    <meta
+      name="description"
+      content="Two-dimensional trajectory designer with straight, circle, racetrack and figure-eight presets, editable control points and generic JSON/CSV export."
+    />
+    <link rel="stylesheet" href="../shared/css/common.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Trajectory Editor</h1>
+      <p class="app-header__subtitle">Design a path in the local ENU plane and export it.</p>
+      <nav>
+        <a href="../index.html">Toolkit</a>
+        <a href="../site_editor/index.html">Editor</a>
+        <a href="../site_viewer/index.html">Viewer</a>
+        <a href="../altitude_sweep/index.html">Altitude sweep</a>
+      </nav>
+    </header>
+
+    <noscript>
+      <p class="status status--error" style="margin: 16px">
+        This tool is implemented in JavaScript modules and cannot run with scripting disabled.
+      </p>
+    </noscript>
+
+    <main class="tool-layout tool-layout--wide-sidebar">
+      <div class="sidebar">
+        <p id="status" class="status status--info">Ready.</p>
+
+        <section class="panel">
+          <h2>Shape preset</h2>
+          <div class="field">
+            <label for="preset-select">Preset</label>
+            <select id="preset-select">
+              <option value="straight">Straight</option>
+              <option value="circle">Circle</option>
+              <option value="racetrack" selected>Racetrack</option>
+              <option value="figure_eight">Figure eight</option>
+            </select>
+          </div>
+
+          <div class="param-group field-grid" data-preset="straight" hidden>
+            <div class="field">
+              <label for="p-length">Length (m)</label>
+              <input id="p-length" type="number" step="1" min="1" value="200" />
+            </div>
+            <div class="field">
+              <label for="p-line-heading">Direction (deg from north)</label>
+              <input id="p-line-heading" type="number" step="1" value="90" />
+            </div>
+          </div>
+
+          <div class="param-group field-grid" data-preset="circle" hidden>
+            <div class="field">
+              <label for="p-radius">Radius (m)</label>
+              <input id="p-radius" type="number" step="1" min="1" value="60" />
+            </div>
+            <div class="field">
+              <label for="p-circle-samples">Points</label>
+              <input id="p-circle-samples" type="number" step="1" min="3" max="720" value="24" />
+            </div>
+          </div>
+
+          <div class="param-group field-grid field-grid--three" data-preset="racetrack" hidden>
+            <div class="field">
+              <label for="p-straight-length">Straight (m)</label>
+              <input id="p-straight-length" type="number" step="1" min="0" value="100" />
+            </div>
+            <div class="field">
+              <label for="p-turn-radius">Turn radius (m)</label>
+              <input id="p-turn-radius" type="number" step="1" min="1" value="35" />
+            </div>
+            <div class="field">
+              <label for="p-arc-segments">Arc segments</label>
+              <input id="p-arc-segments" type="number" step="1" min="1" max="180" value="8" />
+            </div>
+          </div>
+
+          <div class="param-group field-grid field-grid--three" data-preset="figure_eight" hidden>
+            <div class="field">
+              <label for="p-width">Width east (m)</label>
+              <input id="p-width" type="number" step="1" min="1" value="180" />
+            </div>
+            <div class="field">
+              <label for="p-height">Height north (m)</label>
+              <input id="p-height" type="number" step="1" min="1" value="90" />
+            </div>
+            <div class="field">
+              <label for="p-eight-samples">Points</label>
+              <input id="p-eight-samples" type="number" step="1" min="8" max="720" value="32" />
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="generate" type="button" class="primary">Generate points</button>
+          </div>
+          <p class="panel__hint">
+            Generating replaces every control point, including manual edits.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Flight parameters</h2>
+          <div class="field">
+            <label for="traj-name">Trajectory name</label>
+            <input id="traj-name" type="text" value="untitled_trajectory" autocomplete="off" />
+          </div>
+          <div class="field-grid field-grid--three">
+            <div class="field">
+              <label for="altitude">Altitude (m)</label>
+              <input id="altitude" type="number" step="1" />
+            </div>
+            <div class="field">
+              <label for="altitude-ref">Altitude reference</label>
+              <select id="altitude-ref"></select>
+            </div>
+            <div class="field">
+              <label for="speed">Target speed (m/s)</label>
+              <input id="speed" type="number" step="0.1" min="0.1" value="5" />
+            </div>
+          </div>
+          <div class="checkbox">
+            <input id="closed" type="checkbox" checked />
+            <label for="closed">Closed path (last point connects back to the first)</label>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="heading-mode">Heading</label>
+              <select id="heading-mode">
+                <option value="path_tangent" selected>Follow the path tangent</option>
+                <option value="fixed">Fixed heading</option>
+              </select>
+            </div>
+            <div class="field" id="fixed-heading-field" hidden>
+              <label for="fixed-heading">Fixed heading (deg from north)</label>
+              <input id="fixed-heading" type="number" step="1" min="0" max="359.999" value="0" />
+            </div>
+          </div>
+          <p class="panel__hint">
+            Altitude has no default: pick a value and say what it is measured against. Nothing is
+            exported until both are set.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Metrics</h2>
+          <div id="metrics"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Validation</h2>
+          <div id="validation"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Export</h2>
+          <div class="button-row">
+            <button id="download-json" type="button">Download JSON</button>
+            <button id="download-csv" type="button">Download CSV</button>
+          </div>
+          <p class="panel__hint">
+            The CSV has the header
+            <code>east_m,north_m,altitude_m,heading_deg,speed_mps</code> and cannot carry the
+            frame or the altitude reference. The JSON document can, and is the authoritative
+            form. See <a href="../docs/file_formats.md">docs/file_formats.md</a>.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Control points</h2>
+          <div class="button-row" style="margin-bottom: 8px">
+            <button id="insert-point" type="button">Insert after selected</button>
+            <button id="remove-point" type="button" class="danger">Remove selected</button>
+          </div>
+          <div class="table-scroll point-table">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th class="num">east_m</th>
+                  <th class="num">north_m</th>
+                  <th class="num">heading_deg</th>
+                </tr>
+              </thead>
+              <tbody id="point-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="workspace">
+        <div class="canvas-toolbar">
+          <button id="fit-view" type="button">Fit view</button>
+          <span id="cursor-readout" class="mono">&nbsp;</span>
+        </div>
+        <svg
+          id="canvas"
+          class="trajectory-canvas"
+          role="application"
+          aria-label="Trajectory canvas, east to the right and north upwards"
+        ></svg>
+        <p class="panel__hint">
+          Top-down view of the local ENU plane: east to the right, north upwards. Drag a control
+          point to move it; click one to select it for insert or remove.
+        </p>
+      </div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

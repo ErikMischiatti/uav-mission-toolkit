@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Site Viewer &middot; UAV Mission Toolkit</title>
+    <meta
+      name="description"
+      content="Read-only visualisation of a UAV site definition: origin, safety area, mission points, validation findings and dimensions."
+    />
+
+    <!-- Leaflet 1.9.4, pinned. See THIRD_PARTY_NOTICES.md. -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      crossorigin=""
+      defer
+    ></script>
+
+    <link rel="stylesheet" href="../shared/css/common.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Site Viewer</h1>
+      <p class="app-header__subtitle">Read-only sanity check for a site definition.</p>
+      <nav>
+        <a href="../index.html">Toolkit</a>
+        <a href="../site_editor/index.html">Editor</a>
+        <a href="../trajectory_editor/index.html">Trajectory</a>
+        <a href="../altitude_sweep/index.html">Altitude sweep</a>
+      </nav>
+    </header>
+
+    <noscript>
+      <p class="status status--error" style="margin: 16px">
+        This tool is implemented in JavaScript modules and cannot run with scripting disabled.
+      </p>
+    </noscript>
+
+    <main class="tool-layout">
+      <div class="sidebar">
+        <p id="status" class="status status--info">Loading&hellip;</p>
+
+        <section class="panel">
+          <h2>Site file</h2>
+          <div class="field">
+            <label for="example-select">Example from the manifest</label>
+            <select id="example-select"></select>
+          </div>
+          <div class="button-row">
+            <button id="load-example" type="button" class="primary">Load example</button>
+          </div>
+          <div class="field" style="margin-top: 12px">
+            <label for="site-file">Open a local site.json</label>
+            <input id="site-file" type="file" accept="application/json,.json" />
+          </div>
+          <p class="panel__hint">
+            Loaded from: <span id="source-label" class="mono">nothing yet</span>
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Site</h2>
+          <div id="site-summary"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Dimensions</h2>
+          <div id="statistics"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Validation</h2>
+          <div id="validation-counts" class="summary-counts"></div>
+          <div id="validation"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Mission points</h2>
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>id</th>
+                  <th class="num">east_m</th>
+                  <th class="num">north_m</th>
+                  <th class="num">alt_m</th>
+                  <th>alt ref</th>
+                  <th class="num">hdg</th>
+                  <th class="num">latitude</th>
+                  <th class="num">longitude</th>
+                </tr>
+              </thead>
+              <tbody id="mission-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="workspace">
+        <div id="map" class="map" role="application" aria-label="Site map"></div>
+        <p class="panel__hint">
+          This view never modifies the loaded file. To change a site, use the
+          <a href="../site_editor/index.html">Site Editor</a>.
+        </p>
+      </div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

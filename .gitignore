@@ -1,0 +1,59 @@
+# --- OS metadata ------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.AppleDouble
+.LSOverride
+Icon?
+*~
+.directory
+.Trash-*
+
+# --- Editors and IDEs -------------------------------------------------------
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+*.code-workspace
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.swp
+*.swo
+.netrwhist
+.nvimlog
+
+# --- Temporary and backup files ---------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.log
+.cache/
+
+# --- Python (the only tooling this project needs is http.server) ------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# --- Node (not used by v0.1; present so a stray install is not committed) ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Generated output -------------------------------------------------------
+# Files produced BY the tools (downloaded sites, sweep variants) do not belong
+# in the repository. Note that examples/ is deliberately NOT ignored: the demo
+# site and its trajectory are project data and are tracked.
+/downloads/
+/out/
+*_altitude_sweep.json
+*_alt*m.csv

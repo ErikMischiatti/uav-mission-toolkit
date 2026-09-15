@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Altitude Sweep &middot; UAV Mission Toolkit</title>
+    <meta
+      name="description"
+      content="Generate altitude variants of a waypoint CSV and verify that nothing except the altitude column changed."
+    />
+    <link rel="stylesheet" href="../shared/css/common.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Altitude Sweep</h1>
+      <p class="app-header__subtitle">
+        Generate altitude variants of a trajectory CSV, and prove only the altitude changed.
+      </p>
+      <nav>
+        <a href="../index.html">Toolkit</a>
+        <a href="../site_editor/index.html">Editor</a>
+        <a href="../site_viewer/index.html">Viewer</a>
+        <a href="../trajectory_editor/index.html">Trajectory</a>
+      </nav>
+    </header>
+
+    <noscript>
+      <p class="status status--error" style="margin: 16px">
+        This tool is implemented in JavaScript modules and cannot run with scripting disabled.
+      </p>
+    </noscript>
+
+    <main class="tool-layout tool-layout--wide-sidebar">
+      <div class="sidebar">
+        <p id="status" class="status status--info">Loading&hellip;</p>
+
+        <section class="panel">
+          <h2>Source trajectory</h2>
+          <div class="field">
+            <label for="example-select">Example from the manifest</label>
+            <select id="example-select"></select>
+          </div>
+          <div class="button-row">
+            <button id="load-example" type="button" class="primary">Load example</button>
+          </div>
+          <div class="field" style="margin-top: 12px">
+            <label for="csv-file">Open a local trajectory CSV</label>
+            <input id="csv-file" type="file" accept="text/csv,.csv" />
+          </div>
+          <div class="field">
+            <label for="source-alt-ref">Altitude reference of the source file</label>
+            <select id="source-alt-ref"></select>
+          </div>
+          <p class="panel__hint">
+            The CSV format cannot record what its altitude column is measured against, so the
+            reference has to be stated here. It is taken from the example manifest when an example
+            is loaded, and has to be chosen by hand for a file you open yourself.
+          </p>
+          <p class="panel__hint">
+            Loaded from: <span id="source-label" class="mono">nothing yet</span>
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Source summary</h2>
+          <div id="source-summary"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Sweep</h2>
+          <div class="field-grid field-grid--three">
+            <div class="field">
+              <label for="start-alt">Start altitude (m)</label>
+              <input id="start-alt" type="number" step="0.1" value="20" />
+            </div>
+            <div class="field">
+              <label for="end-alt">End altitude (m)</label>
+              <input id="end-alt" type="number" step="0.1" value="60" />
+            </div>
+            <div class="field">
+              <label for="step-alt">Step (m)</label>
+              <input id="step-alt" type="number" step="0.1" min="0.001" value="10" />
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="generate" type="button" class="primary">Generate variants</button>
+            <button id="download-all" type="button">Download all</button>
+          </div>
+          <p class="panel__hint">
+            The step is always positive; a descending sweep is expressed by an end altitude below
+            the start. "Download all" issues one download per variant plus a sweep manifest, and
+            some browsers ask for permission to save multiple files.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Verification</h2>
+          <div id="verification-summary" class="summary-counts"></div>
+          <div id="verification"></div>
+        </section>
+      </div>
+
+      <div class="workspace">
+        <section class="panel">
+          <h2>Generated variants</h2>
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th class="num">altitude_m</th>
+                  <th class="num">rows</th>
+                  <th>verification</th>
+                  <th>filename</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="variant-rows"></tbody>
+            </table>
+          </div>
+          <p class="panel__hint">
+            Every variant is written to CSV, parsed back from that text, and compared against the
+            source row by row. Only a variant that passes can be downloaded.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>Preview</h2>
+          <p id="preview-label" class="panel__hint">Select a variant to preview it.</p>
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th class="num">#</th>
+                  <th class="num">east_m</th>
+                  <th class="num">north_m</th>
+                  <th class="num">altitude_m</th>
+                  <th class="num">heading_deg</th>
+                  <th class="num">speed_mps</th>
+                </tr>
+              </thead>
+              <tbody id="preview-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
