@@ -57,7 +57,30 @@ export function clear(node) {
 }
 
 /**
+ * Read a design-system colour token.
+ *
+ * Leaflet and the SVG canvas need real colour strings, not CSS variables, so
+ * the geometry colours are pulled from the same custom properties the
+ * stylesheet defines. That keeps one palette instead of two, and makes the
+ * geometry follow the light/dark theme automatically.
+ *
+ * @param {string} name e.g. '--geo-safety'
+ * @param {string} fallback used when the stylesheet has not loaded
+ * @returns {string}
+ */
+export function cssToken(name, fallback) {
+  if (typeof getComputedStyle !== 'function') return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value === '' ? fallback : value;
+}
+
+/**
  * Render a validation finding list into a container.
+ *
+ * Findings are ordered errors first, and the "nothing to report" case is a
+ * single quiet line rather than a success card: a panel full of green boxes
+ * teaches the reader to stop looking at it.
+ *
  * @param {HTMLElement} container
  * @param {Array<{severity:string, code:string, message:string, path?:string}>} findings
  * @param {{emptyMessage?: string}} [options]
@@ -88,6 +111,107 @@ export function renderFindings(container, findings, options = {}) {
     list.append(item);
   }
   container.append(list);
+}
+
+/**
+ * Summarise a finding list in a few words: "Valid", "2 errors · 1 warning".
+ *
+ * Returned as data rather than markup so the caller decides where it goes.
+ *
+ * @param {Array<{severity:string}>} findings
+ * @param {{idle?: boolean, idleText?: string}} [options] idle = nothing loaded yet
+ * @returns {{level: 'idle'|'ok'|'warning'|'error', glyph: string, text: string}}
+ */
+export function summarizeFindings(findings, options = {}) {
+  if (options.idle) {
+    return { level: 'idle', glyph: '·', text: options.idleText ?? 'Nothing loaded' };
+  }
+  const counts = { error: 0, warning: 0, info: 0 };
+  for (const finding of findings) {
+    if (finding.severity in counts) counts[finding.severity] += 1;
+  }
+
+  const parts = [];
+  if (counts.error > 0) parts.push(plural(counts.error, 'error'));
+  if (counts.warning > 0) parts.push(plural(counts.warning, 'warning'));
+  if (counts.error === 0 && counts.warning === 0 && counts.info > 0) {
+    parts.push(plural(counts.info, 'note'));
+  }
+
+  if (counts.error > 0) return { level: 'error', glyph: '✕', text: parts.join(' · ') };
+  if (counts.warning > 0) return { level: 'warning', glyph: '!', text: parts.join(' · ') };
+  // Informational notes are not a problem; the verdict stays "valid" and says so.
+  return {
+    level: 'ok',
+    glyph: '✓',
+    text: parts.length > 0 ? `Valid · ${parts.join(' · ')}` : 'Valid',
+  };
+}
+
+function plural(count, noun) {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Write a validation verdict into a container as a compact badge.
+ *
+ * The glyph is redundant with the colour on purpose: colour alone must never be
+ * the only carrier of a state that matters.
+ *
+ * @param {HTMLElement} container
+ * @param {ReturnType<typeof summarizeFindings>} verdict
+ */
+export function renderVerdict(container, verdict) {
+  container.className = `verdict verdict--${verdict.level}`;
+  clear(container);
+  container.append(
+    el('span', { class: 'verdict__glyph', text: verdict.glyph, 'aria-hidden': 'true' }),
+    el('span', { text: verdict.text })
+  );
+}
+
+/**
+ * Fill one slot of the context bar.
+ * @param {HTMLElement} element the .context__value span
+ * @param {string|null} value
+ * @param {string} [emptyText]
+ */
+export function setContext(element, value, emptyText = 'not set') {
+  const missing = value === null || value === undefined || value === '';
+  element.textContent = missing ? emptyText : String(value);
+  element.classList.toggle('context__value--muted', missing);
+}
+
+/**
+ * A short explanation for a piece of unavoidable jargon. Used by the `?`
+ * affordances next to labels; kept here so every tool says the same thing.
+ */
+export const GLOSSARY = Object.freeze({
+  ENU: 'East-North-Up: a local Cartesian frame in metres, with its origin at the site origin. ' +
+    'X is east, Y is north, Z is up.',
+  AGL: 'Above Ground Level: height above the terrain directly below the point.',
+  AMSL: 'Above Mean Sea Level: height above the sea-level reference surface.',
+  ATO: 'Above Take-Off: height above the site origin altitude.',
+  heading: 'Degrees clockwise from true north, in [0, 360). 0 is north, 90 is east.',
+  local_enu: 'Coordinates are metres in the site\'s local ENU frame, not latitude/longitude.',
+});
+
+/**
+ * Attach a `?` help affordance carrying a glossary entry.
+ * @param {string} term a key of GLOSSARY, or literal help text
+ * @returns {HTMLElement}
+ */
+export function helpFor(term) {
+  const text = GLOSSARY[term] ?? term;
+  return el('button', {
+    type: 'button',
+    class: 'help',
+    text: '?',
+    title: text,
+    'aria-label': `What does ${term} mean? ${text}`,
+    // A help marker is not a form control; keep it out of the submit path.
+    onClick: (event) => event.preventDefault(),
+  });
 }
 
 /**
@@ -129,16 +253,18 @@ export function installGlobalErrorHandlers(container) {
 }
 
 /**
- * Leaflet is loaded from a CDN by each tool's HTML. Fail with an actionable
- * message rather than a bare "L is not defined".
+ * Leaflet is vendored under shared/vendor/leaflet/ and loaded by each tool's
+ * HTML, so this only fails when the repository is incomplete or the page was
+ * opened from the wrong place. Fail with an actionable message rather than a
+ * bare "L is not defined".
  * @returns {object} the Leaflet namespace
  */
 export function ensureLeaflet() {
   if (typeof window.L === 'undefined') {
     throw new Error(
-      'Leaflet could not be loaded from the CDN, so the map is unavailable. ' +
-        'Check your network connection, or vendor Leaflet locally as described in ' +
-        'THIRD_PARTY_NOTICES.md. Everything else on this page still works.'
+      'Leaflet did not load from shared/vendor/leaflet/leaflet.js, so the map is ' +
+        'unavailable. Check that the file exists and that the page is served over HTTP ' +
+        'from the repository root. Everything else on this page still works.'
     );
   }
   return window.L;

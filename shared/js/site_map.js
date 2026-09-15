@@ -9,25 +9,44 @@
 
 import { enuToGeodetic, geodeticToEnu } from './geo.js';
 import { roundTo } from './io.js';
-import { ensureLeaflet } from './ui.js';
+import { cssToken, ensureLeaflet } from './ui.js';
 
-/** Pinned tile source. Tiles require an internet connection. */
+/**
+ * Pinned tile source. Leaflet itself is vendored and works offline; the tiles
+ * are the one part of the map that still needs an internet connection. When
+ * they cannot be fetched the view falls back to geometry on a plain background
+ * (see #enterTilelessMode) rather than showing a silently blank map.
+ */
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const TILE_MAX_ZOOM = 19;
+/**
+ * Consecutive tile failures tolerated before declaring the tile source
+ * unavailable. A single failure can be one bad tile; a handful in a row is a
+ * connectivity problem.
+ */
+const TILE_FAILURE_THRESHOLD = 4;
 
 /** Zoom used when a site has an origin but no other geometry to fit. */
 const FALLBACK_ZOOM = 17;
 /** Padding applied when fitting the map to the site geometry, in pixels. */
 const FIT_PADDING_PX = 32;
 
-const POLYGON_STYLE = Object.freeze({
-  color: '#c2410c',
-  weight: 2,
-  fillColor: '#f97316',
-  fillOpacity: 0.08,
-});
+/**
+ * Geometry colours come from the design tokens in shared/css/common.css rather
+ * than being duplicated here, so the map follows the light/dark theme and there
+ * is only one palette to keep distinguishable. Leaflet needs real colour
+ * strings, hence the lookup instead of a CSS variable.
+ */
+function polygonStyle() {
+  return {
+    color: cssToken('--geo-safety', '#c2410c'),
+    weight: 2,
+    fillColor: cssToken('--geo-safety-fill', '#f97316'),
+    fillOpacity: 0.1,
+  };
+}
 
 export class SiteMapView {
   /**
@@ -43,7 +62,10 @@ export class SiteMapView {
     this.L = ensureLeaflet();
     this.options = options;
     this.site = null;
+    this.container = container;
     this.tileErrorReported = false;
+    this.tileFailureCount = 0;
+    this.tilesAvailable = true;
 
     this.map = this.L.map(container, {
       zoomControl: true,
@@ -60,14 +82,48 @@ export class SiteMapView {
     }).addTo(this.map);
 
     this.tileLayer.on('tileerror', () => {
+      this.tileFailureCount += 1;
+      if (this.tileFailureCount < TILE_FAILURE_THRESHOLD) return;
       if (this.tileErrorReported) return;
       this.tileErrorReported = true;
+      this.#enterTilelessMode();
       this.options.onTileError?.();
+    });
+    // A tile that does load clears the run of failures: a flaky connection
+    // should not permanently downgrade the map.
+    this.tileLayer.on('tileload', () => {
+      this.tileFailureCount = 0;
     });
 
     this.L.control.scale({ imperial: false }).addTo(this.map);
 
     this.overlay = this.L.layerGroup().addTo(this.map);
+  }
+
+  /**
+   * Whether the tile layer is still usable.
+   *
+   * Tile failures and file loads race: with no network the tiles fail within
+   * milliseconds, which is usually *before* the site finishes loading, so a
+   * status line written by the tile handler would be overwritten by the load
+   * message. Tools therefore ask for this when they compose a status, instead
+   * of relying on the order the two events happen to arrive in.
+   *
+   * @returns {boolean}
+   */
+  hasTiles() {
+    return this.tilesAvailable;
+  }
+
+  /**
+   * A short note to append to a status line when the basemap is missing, or
+   * the empty string when there is nothing to say.
+   * @returns {string}
+   */
+  tileNote() {
+    return this.tilesAvailable
+      ? ''
+      : ' Map tiles are unavailable, so the map shows geometry only.';
   }
 
   /**
@@ -114,12 +170,44 @@ export class SiteMapView {
     this.map.invalidateSize();
   }
 
+  /**
+   * Fall back to a usable map without tiles.
+   *
+   * Everything that makes the geometry usable — panning, zooming, the scale
+   * bar, the draggable handles — is a Leaflet feature and keeps working
+   * offline. What is lost is only the imagery, so the tile layer is removed
+   * (it would otherwise keep retrying and keep logging) and replaced by a
+   * plain graticule-style background plus a badge that says what happened.
+   * Nothing here is silent: the caller's onTileError also runs.
+   */
+  #enterTilelessMode() {
+    this.tilesAvailable = false;
+    this.map.removeLayer(this.tileLayer);
+    this.container.classList.add('map--tileless');
+
+    const Notice = this.L.Control.extend({
+      options: { position: 'topright' },
+      onAdd: () => {
+        const box = this.L.DomUtil.create('div', 'map-tile-notice');
+        // textContent, never innerHTML: nothing user-supplied reaches the DOM
+        // as markup anywhere in this toolkit.
+        box.textContent = 'Map tiles unavailable — geometry only';
+        box.title =
+          'The tile server could not be reached. Leaflet, the site geometry and every ' +
+          'editing control still work; only the background imagery is missing.';
+        return box;
+      },
+    });
+    this.tileNotice = new Notice();
+    this.tileNotice.addTo(this.map);
+  }
+
   #renderOrigin(originLatLng) {
     this.L.circleMarker(originLatLng, {
-      radius: 7,
-      color: '#0f172a',
+      radius: 6,
+      color: '#ffffff',
       weight: 2,
-      fillColor: '#38bdf8',
+      fillColor: cssToken('--geo-origin', '#0b7285'),
       fillOpacity: 1,
     })
       .bindTooltip('Origin (E 0 m, N 0 m)', { direction: 'top' })
@@ -138,7 +226,7 @@ export class SiteMapView {
     }
     this.geometryLatLngs.push(...latLngs);
 
-    const polygon = this.L.polygon(latLngs, POLYGON_STYLE).addTo(this.overlay);
+    const polygon = this.L.polygon(latLngs, polygonStyle()).addTo(this.overlay);
     polygon.bindTooltip('Safety area', { sticky: true });
 
     if (!this.options.editable || !this.options.onVertexMoved) return;
@@ -205,7 +293,7 @@ export class SiteMapView {
 
     if (pathLatLngs.length >= 2) {
       this.L.polyline(pathLatLngs, {
-        color: '#2563eb',
+        color: cssToken('--geo-point', '#2563eb'),
         weight: 1.5,
         dashArray: '6 4',
         interactive: false,

@@ -8,10 +8,24 @@
  *
  * Altitude and altitude reference start empty on purpose. Export is refused
  * until both are set, because a bare altitude number means nothing.
+ *
+ * A site may be loaded as *context*. It sets the local frame the trajectory is
+ * expressed in, is drawn behind the path, and is what the trajectory is
+ * validated against. It is strictly read-only here: nothing in this file writes
+ * to the site object, and the trajectory editor is deliberately not a second
+ * place to edit a site.
  */
 
-import { distance2dM } from '../shared/js/geo.js';
-import { downloadJson, downloadText, sanitizeFilenamePart } from '../shared/js/io.js';
+import { distance2dM, pathSegmentsLeavingPolygon, pointInPolygon } from '../shared/js/geo.js';
+import { History, attachHistoryControls } from '../shared/js/history.js';
+import {
+  downloadJson,
+  downloadText,
+  fetchJson,
+  parseJson,
+  readFileAsText,
+  sanitizeFilenamePart,
+} from '../shared/js/io.js';
 import {
   buildTrajectoryDocument,
   computePathHeadings,
@@ -23,6 +37,8 @@ import {
   ALTITUDE_REFERENCES,
   SEVERITY,
   hasErrors,
+  validateAgainstSite,
+  validateSite,
   validateTrajectory,
 } from '../shared/js/validation.js';
 import {
@@ -32,13 +48,17 @@ import {
   el,
   formatDuration,
   formatMeters,
+  helpFor,
   installGlobalErrorHandlers,
   must,
   numberToInput,
   readNumberInput,
   renderFindings,
+  renderVerdict,
   reportError,
+  setContext,
   setStatus,
+  summarizeFindings,
 } from '../shared/js/ui.js';
 import { TrajectoryCanvas } from './canvas.js';
 import { buildPreset } from './presets.js';
@@ -54,6 +74,9 @@ const DEGENERATE_SEGMENT_M = 0.01;
  */
 const DEGENERATE_PATH_HEADING_DEG = 0;
 
+/** Example index. The toolkit never scrapes an HTTP directory listing. */
+const MANIFEST_URL = '../examples/manifest.json';
+
 const state = {
   /** @type {Array<{east_m: number, north_m: number}>} */
   points: [],
@@ -62,6 +85,23 @@ const state = {
   selectedIndex: null,
   /** @type {TrajectoryCanvas|null} */
   canvas: null,
+  /**
+   * Read-only site context, or null for the abstract local plane.
+   * @type {object|null}
+   */
+  site: null,
+  siteLabel: null,
+  /** @type {URL|null} */
+  manifestUrl: null,
+  /** @type {Array<object>} */
+  manifestSites: [],
+  /**
+   * Undo/redo over the editable part of the trajectory: the control points,
+   * the closed flag and the selection. The site is context, not content, so it
+   * is deliberately not part of the history — choosing a different site is not
+   * an edit to the trajectory.
+   */
+  history: new History(),
 };
 
 const els = {};
@@ -69,16 +109,20 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   cacheElements();
   installGlobalErrorHandlers(els.status);
+  installHelp();
   fillAltitudeReferenceSelect();
   wireEvents();
   initCanvas();
   updatePresetVisibility();
+  renderSiteSummary();
   generateFromPreset({ announce: false });
   setStatus(
     els.status,
-    'Racetrack preset loaded. Set an altitude and an altitude reference before exporting.',
+    'Racetrack preset loaded. Choose a site for context, and set an altitude and an altitude ' +
+      'reference before exporting.',
     'info'
   );
+  loadSiteManifest();
 });
 
 function cacheElements() {
@@ -108,6 +152,24 @@ function cacheElements() {
   els.canvas = must('#canvas');
   els.fitView = must('#fit-view');
   els.cursorReadout = must('#cursor-readout');
+
+  els.siteSource = must('#site-source');
+  els.siteFile = must('#site-file');
+  els.siteSummary = must('#site-summary');
+
+  els.undo = must('#undo');
+  els.redo = must('#redo');
+
+  els.ctxSite = must('#ctx-site');
+  els.ctxFrame = must('#ctx-frame');
+  els.ctxAltitude = must('#ctx-altitude');
+  els.ctxVerdict = must('#ctx-verdict');
+}
+
+/** Attach the `?` explanations for the jargon this tool cannot avoid. */
+function installHelp() {
+  must('#help-altref').append(helpFor('AGL'));
+  must('#help-heading').append(helpFor('heading'));
 }
 
 function fillAltitudeReferenceSelect() {
@@ -128,6 +190,7 @@ function wireEvents() {
   els.altitudeRef.addEventListener('change', () => refresh({ rebuildTable: false }));
   els.closed.addEventListener('change', () => {
     state.closed = els.closed.checked;
+    commit(state.closed ? 'Close the path' : 'Open the path');
     refresh({ rebuildTable: true });
   });
   els.headingMode.addEventListener('change', () => {
@@ -143,6 +206,205 @@ function wireEvents() {
   els.fitView.addEventListener('click', () => {
     state.canvas?.fit();
   });
+
+  // Flight parameters are part of the document, so a committed change to one
+  // is undoable. The model updates on every keystroke (validation stays live);
+  // only the committed value becomes a history entry.
+  for (const input of [els.altitude, els.speed, els.fixedHeading, els.name]) {
+    input.addEventListener('change', () => commit(`Change ${input.id.replace(/-/g, ' ')}`));
+  }
+  els.altitudeRef.addEventListener('change', () => commit('Change altitude reference'));
+  els.headingMode.addEventListener('change', () => commit('Change heading mode'));
+
+  attachHistoryControls({
+    history: state.history,
+    undoButton: els.undo,
+    redoButton: els.redo,
+    apply: (snapshot, direction, label) => {
+      restoreSnapshot(snapshot);
+      refresh({ rebuildTable: true });
+      setStatus(
+        els.status,
+        `${direction === 'undo' ? 'Undid' : 'Redid'}: ${label ?? 'the last change'}.`,
+        'info'
+      );
+    },
+  });
+
+  els.siteSource.addEventListener('change', () => onSiteSourceChanged());
+  els.siteFile.addEventListener('change', (event) => {
+    const [file] = event.target.files ?? [];
+    if (file) loadSiteFromFile(file);
+  });
+}
+
+// --- site context -----------------------------------------------------------
+
+/**
+ * Fill the site picker from the example manifest.
+ *
+ * "No site" stays the first option and the default: working without a site is a
+ * legitimate choice, not a degraded state, and the tool must not imply that one
+ * of the shipped examples is the right frame for whatever the user is drawing.
+ */
+async function loadSiteManifest() {
+  try {
+    state.manifestUrl = new URL(MANIFEST_URL, window.location.href);
+    const manifest = await fetchJson(state.manifestUrl.href);
+    state.manifestSites = Array.isArray(manifest?.sites) ? manifest.sites : [];
+    state.manifestSites.forEach((entry, index) => {
+      els.siteSource.append(
+        el('option', {
+          value: `example:${index}`,
+          text: entry.name ?? entry.id ?? entry.site_path,
+        })
+      );
+    });
+  } catch (err) {
+    // A missing manifest must not take the tool down: the local-file path and
+    // the no-site path both still work.
+    reportError(els.status, err, 'Could not read the example site manifest');
+  }
+}
+
+function onSiteSourceChanged() {
+  const value = els.siteSource.value;
+  if (value === 'none') {
+    adoptSite(null, null);
+    setStatus(els.status, 'Working without a site, in an abstract local plane.', 'info');
+    return;
+  }
+  const index = Number(value.slice('example:'.length));
+  loadExampleSite(index);
+}
+
+async function loadExampleSite(index) {
+  try {
+    const entry = state.manifestSites[index];
+    if (!entry?.site_path) throw new Error('That manifest entry has no "site_path".');
+    const site = await fetchJson(new URL(entry.site_path, state.manifestUrl).href);
+    adoptSite(site, `examples/${entry.site_path}`);
+  } catch (err) {
+    reportError(els.status, err, 'Could not load the site');
+  }
+}
+
+/** @param {File} file */
+async function loadSiteFromFile(file) {
+  try {
+    const text = await readFileAsText(file);
+    const site = parseJson(text, file.name);
+    if (site === null || typeof site !== 'object' || Array.isArray(site)) {
+      throw new Error(`"${file.name}" does not contain a site object.`);
+    }
+    // A local file is not in the picker, so give it an entry and select it.
+    let option = els.siteSource.querySelector('option[value="local"]');
+    if (option === null) {
+      option = el('option', { value: 'local' });
+      els.siteSource.append(option);
+    }
+    option.textContent = file.name;
+    els.siteSource.value = 'local';
+    adoptSite(site, file.name);
+  } catch (err) {
+    reportError(els.status, err, `Could not load "${file.name}"`);
+  }
+}
+
+/**
+ * Take a site as context.
+ *
+ * The site is validated first: checking a trajectory against a site that is
+ * itself broken produces findings that blame the wrong document. A site with
+ * errors is still adopted — it is the user's data and they may be mid-repair —
+ * but the tool says so rather than quietly treating it as authoritative.
+ *
+ * @param {object|null} site
+ * @param {string|null} label
+ */
+function adoptSite(site, label) {
+  state.site = site;
+  state.siteLabel = label;
+  renderSiteSummary();
+  refresh({ rebuildTable: false, fitCanvas: true });
+
+  if (site === null) return;
+
+  const findings = validateSite(site);
+  if (hasErrors(findings)) {
+    setStatus(
+      els.status,
+      `Loaded "${label}" as context, but that site definition has validation errors. ` +
+        `Checks against it may be misleading — repair it in the Site Editor.`,
+      'warning'
+    );
+  } else {
+    setStatus(els.status, `Site context: "${label}". The trajectory is checked against it.`, 'ok');
+  }
+}
+
+function renderSiteSummary() {
+  clear(els.siteSummary);
+  const site = state.site;
+  if (site === null) {
+    els.siteSummary.append(
+      el('p', {
+        class: 'panel__hint',
+        text:
+          'No site. Coordinates are metres in an abstract local plane, and nothing checks them ' +
+          'against a safety area or an altitude band.',
+      })
+    );
+    return;
+  }
+
+  const safety = site.safety_area ?? {};
+  const band =
+    Number.isFinite(safety.min_altitude_m) && Number.isFinite(safety.max_altitude_m)
+      ? `${safety.min_altitude_m} … ${safety.max_altitude_m} m ${safety.altitude_reference ?? '(reference not set)'}`
+      : NO_VALUE;
+
+  els.siteSummary.append(
+    definitionList([
+      ['Name', typeof site.name === 'string' ? site.name : NO_VALUE],
+      ['Site id', typeof site.site_id === 'string' ? site.site_id : 'not set'],
+      ['Frame', site.local_frame?.type ?? NO_VALUE],
+      ['Altitude band', band],
+      [
+        'Safety vertices',
+        String(Array.isArray(safety.horizontal) ? safety.horizontal.length : 0),
+      ],
+      [
+        'Mission points',
+        String(Array.isArray(site.mission_points) ? site.mission_points.length : 0),
+      ],
+    ])
+  );
+}
+
+/**
+ * Which control points fall outside the site's safety area, and which segments
+ * leave it. Used to mark them on the canvas; the validation panel gets the same
+ * facts from shared/js/validation.js.
+ *
+ * @returns {{outsidePointIndices: number[], leavingSegmentIndices: number[]}}
+ */
+function siteViolations() {
+  const ring = state.site?.safety_area?.horizontal;
+  const polygon = Array.isArray(ring) && ring.length >= 3 ? ring : null;
+  if (polygon === null) return { outsidePointIndices: [], leavingSegmentIndices: [] };
+
+  const outsidePointIndices = [];
+  state.points.forEach((point, index) => {
+    if (!pointInPolygon(point, polygon)) outsidePointIndices.push(index);
+  });
+
+  return {
+    outsidePointIndices,
+    leavingSegmentIndices: pathSegmentsLeavingPolygon(state.points, polygon, {
+      closed: state.closed,
+    }),
+  };
 }
 
 function initCanvas() {
@@ -160,7 +422,12 @@ function initCanvas() {
       // validation panel are rebuilt once the drag ends.
       drawCanvas({ fit: false });
     },
-    onPointDragEnd: () => refresh({ rebuildTable: true, fitCanvas: false }),
+    onPointDragEnd: (index) => {
+      // One entry per gesture. The intermediate positions were never pushed,
+      // so there is nothing to coalesce away here.
+      commit(`Move control point ${index}`);
+      refresh({ rebuildTable: true, fitCanvas: false });
+    },
     onCursorMove: (enu) => {
       els.cursorReadout.textContent =
         enu === null
@@ -168,6 +435,57 @@ function initCanvas() {
           : `E ${enu.east_m.toFixed(1)} m  N ${enu.north_m.toFixed(1)} m`;
     },
   });
+}
+
+/**
+ * Everything an undo has to restore.
+ *
+ * The flight parameters live in the DOM rather than in `state`, so they are
+ * read out here; restoring writes them back. Keeping the snapshot explicit (as
+ * opposed to cloning `state`) also documents exactly what is and is not
+ * undoable.
+ *
+ * @returns {object}
+ */
+function snapshot() {
+  return {
+    points: state.points.map((point) => ({ ...point })),
+    closed: state.closed,
+    selectedIndex: state.selectedIndex,
+    name: els.name.value,
+    altitude: els.altitude.value,
+    altitudeReference: els.altitudeRef.value,
+    speed: els.speed.value,
+    headingMode: els.headingMode.value,
+    fixedHeading: els.fixedHeading.value,
+    preset: els.presetSelect.value,
+  };
+}
+
+/** @param {object} snap */
+function restoreSnapshot(snap) {
+  state.points = snap.points.map((point) => ({ ...point }));
+  state.closed = snap.closed;
+  state.selectedIndex = snap.selectedIndex;
+  els.name.value = snap.name;
+  els.altitude.value = snap.altitude;
+  els.altitudeRef.value = snap.altitudeReference;
+  els.speed.value = snap.speed;
+  els.headingMode.value = snap.headingMode;
+  els.fixedHeading.value = snap.fixedHeading;
+  els.presetSelect.value = snap.preset;
+  els.closed.checked = snap.closed;
+  els.fixedHeadingField.hidden = snap.headingMode !== 'fixed';
+  updatePresetVisibility();
+}
+
+/**
+ * Record the current editable state as one undoable operation.
+ * @param {string} label
+ * @param {{coalesceKey?: string}} [options]
+ */
+function commit(label, options = {}) {
+  state.history.push(snapshot(), label, options);
 }
 
 function updatePresetVisibility() {
@@ -190,6 +508,7 @@ function generateFromPreset({ announce }) {
     state.closed = closed;
     state.selectedIndex = null;
     els.closed.checked = closed;
+    commit(`Replace points with ${preset} preset`);
     refresh({ rebuildTable: true, fitCanvas: true });
     if (announce) {
       setStatus(els.status, `Generated ${points.length} control points (${preset}).`, 'ok');
@@ -263,6 +582,7 @@ function insertAfterSelected() {
 
   state.points.splice(index + 1, 0, inserted);
   state.selectedIndex = index + 1;
+  commit(`Insert control point ${index + 1}`);
   refresh({ rebuildTable: true });
   setStatus(els.status, `Inserted control point at index ${index + 1}.`, 'ok');
 }
@@ -279,6 +599,7 @@ function removeSelected() {
   const removed = state.selectedIndex;
   state.points.splice(removed, 1);
   state.selectedIndex = Math.min(removed, state.points.length - 1);
+  commit(`Remove control point ${removed}`);
   refresh({ rebuildTable: true });
   setStatus(els.status, `Removed control point ${removed}.`, 'ok');
 }
@@ -367,7 +688,21 @@ function buildDocumentOrFindings() {
     );
   }
 
-  if (hasErrors(findings)) return { document: null, findings };
+  if (hasErrors(findings)) {
+    // The document cannot be assembled yet, but the site checks do not depend
+    // on it. Run them anyway: "your path leaves the safety area" must not stay
+    // hidden behind "you have not chosen an altitude reference".
+    return {
+      document: null,
+      findings: [
+        ...findings,
+        ...validateAgainstSite(
+          { points: state.points, closed: state.closed, altitudeReference },
+          state.site
+        ),
+      ],
+    };
+  }
 
   const points = state.points.map((point, index) => ({
     east_m: point.east_m,
@@ -383,9 +718,16 @@ function buildDocumentOrFindings() {
     speedMps: speed,
     altitudeReference,
     closed: state.closed,
+    site: state.site,
   });
 
-  return { document: document_, findings: [...findings, ...validateTrajectory(document_)] };
+  return {
+    document: document_,
+    findings: [
+      ...findings,
+      ...validateTrajectory(document_, state.site === null ? {} : { site: state.site }),
+    ],
+  };
 }
 
 function countShortSegments() {
@@ -413,12 +755,15 @@ function refresh(options = {}) {
 }
 
 function drawCanvas({ fit }) {
+  const violations = siteViolations();
   state.canvas?.setData(
     {
       points: state.points,
       closed: state.closed,
       headings: currentHeadings(),
       selectedIndex: state.selectedIndex,
+      site: state.site,
+      ...violations,
     },
     { fit }
   );
@@ -484,6 +829,7 @@ function numberCell(value, apply) {
     input.setCustomValidity('');
     apply(parsed);
   });
+  input.addEventListener('change', () => commit('Edit control point'));
   input.addEventListener('click', (event) => event.stopPropagation());
   return input;
 }
@@ -530,11 +876,51 @@ function renderMetrics() {
   );
 }
 
+/**
+ * Re-render validation, the context bar and the export buttons.
+ *
+ * The export buttons reflect the verdict rather than failing on click: a
+ * disabled button that says why is a better answer than a button that looks
+ * ready and then refuses.
+ */
 function renderValidation() {
-  const { findings } = buildDocumentOrFindings();
+  const { document: document_, findings } = buildDocumentOrFindings();
+  const exportable = document_ !== null && !hasErrors(findings);
+
   renderFindings(els.validation, findings, {
-    emptyMessage: 'The trajectory is complete and satisfies every rule in shared/js/validation.js.',
+    emptyMessage: 'No findings. The trajectory is complete and internally consistent.',
   });
+  renderVerdict(els.ctxVerdict, summarizeFindings(findings));
+
+  const altitude = readNumberInput(els.altitude);
+  const reference = els.altitudeRef.value;
+  setContext(
+    els.ctxAltitude,
+    altitude === null ? null : `${altitude} m ${reference || '(reference not set)'}`
+  );
+  setContext(
+    els.ctxSite,
+    state.site === null
+      ? null
+      : state.site.site_id ?? state.site.name ?? state.siteLabel,
+    'no site'
+  );
+  // The frame slot says something new only when the site disagrees with what
+  // the trajectory format assumes; repeating "ENU" twice is just noise.
+  const siteFrame = state.site?.local_frame?.type ?? null;
+  setContext(
+    els.ctxFrame,
+    siteFrame !== null && siteFrame !== 'ENU'
+      ? `local ENU · metres — site declares ${siteFrame}`
+      : 'local ENU · metres'
+  );
+
+  for (const button of [els.downloadJson, els.downloadCsv]) {
+    button.disabled = !exportable;
+    button.title = exportable
+      ? ''
+      : 'Export is blocked while the trajectory has validation errors. See the Validation panel.';
+  }
 }
 
 // --- export -----------------------------------------------------------------

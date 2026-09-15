@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="../shared/favicon.svg" type="image/svg+xml" />
     <title>Altitude Sweep &middot; UAV Mission Toolkit</title>
     <meta
       name="description"
@@ -11,19 +12,36 @@
     <link rel="stylesheet" href="../shared/css/common.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="tool">
     <header class="app-header">
+      <a class="app-header__brand" href="../index.html">UAV Mission Toolkit</a>
+      <span class="app-header__divider" aria-hidden="true"></span>
       <h1>Altitude Sweep</h1>
-      <p class="app-header__subtitle">
-        Generate altitude variants of a trajectory CSV, and prove only the altitude changed.
-      </p>
-      <nav>
-        <a href="../index.html">Toolkit</a>
-        <a href="../site_editor/index.html">Editor</a>
-        <a href="../site_viewer/index.html">Viewer</a>
+      <p class="app-header__subtitle">One variant per altitude, each proved to differ only in altitude.</p>
+      <nav aria-label="Tools">
+        <a href="../site_editor/index.html">Site Editor</a>
         <a href="../trajectory_editor/index.html">Trajectory</a>
+        <a href="../altitude_sweep/index.html" aria-current="page">Altitude sweep</a>
+        <a href="../site_viewer/index.html">Viewer</a>
       </nav>
     </header>
+
+    <div class="context-bar">
+      <div class="context">
+        <span class="context__label">Source</span>
+        <span id="ctx-source" class="context__value context__value--muted">nothing loaded</span>
+      </div>
+      <div class="context">
+        <span class="context__label">Rows</span>
+        <span id="ctx-rows" class="context__value context__value--muted">—</span>
+      </div>
+      <div class="context">
+        <span class="context__label">Altitude ref</span>
+        <span id="ctx-altref" class="context__value context__value--muted">not set</span>
+      </div>
+      <div class="context-bar__spacer"></div>
+      <span id="ctx-verdict" class="verdict verdict--idle">Nothing generated</span>
+    </div>
 
     <noscript>
       <p class="status status--error" style="margin: 16px">
@@ -31,10 +49,8 @@
       </p>
     </noscript>
 
-    <main class="tool-layout tool-layout--wide-sidebar">
+    <main class="tool-layout">
       <div class="sidebar">
-        <p id="status" class="status status--info">Loading&hellip;</p>
-
         <section class="panel">
           <h2>Source trajectory</h2>
           <div class="field">
@@ -42,45 +58,47 @@
             <select id="example-select"></select>
           </div>
           <div class="button-row">
-            <button id="load-example" type="button" class="primary">Load example</button>
+            <button id="load-example" type="button">Load example</button>
           </div>
-          <div class="field" style="margin-top: 12px">
+          <div class="field" style="margin-top: var(--space-3)">
             <label for="csv-file">Open a local trajectory CSV</label>
             <input id="csv-file" type="file" accept="text/csv,.csv" />
           </div>
           <div class="field">
-            <label for="source-alt-ref">Altitude reference of the source file</label>
+            <label for="source-alt-ref">
+              Altitude reference of the source <span id="help-altref"></span>
+            </label>
             <select id="source-alt-ref"></select>
+            <p class="panel__hint">
+              A CSV cannot record what its altitude column is measured against. An example takes
+              this from the manifest; a file you open yourself needs it set by hand.
+            </p>
           </div>
-          <p class="panel__hint">
-            The CSV format cannot record what its altitude column is measured against, so the
-            reference has to be stated here. It is taken from the example manifest when an example
-            is loaded, and has to be chosen by hand for a file you open yourself.
-          </p>
-          <p class="panel__hint">
-            Loaded from: <span id="source-label" class="mono">nothing yet</span>
-          </p>
-        </section>
-
-        <section class="panel">
-          <h2>Source summary</h2>
-          <div id="source-summary"></div>
         </section>
 
         <section class="panel">
           <h2>Sweep</h2>
           <div class="field-grid field-grid--three">
             <div class="field">
-              <label for="start-alt">Start altitude (m)</label>
-              <input id="start-alt" type="number" step="0.1" value="20" />
+              <label for="start-alt">Start</label>
+              <div class="input-unit">
+                <input id="start-alt" type="number" step="any" value="20" />
+                <span class="input-unit__suffix">m</span>
+              </div>
             </div>
             <div class="field">
-              <label for="end-alt">End altitude (m)</label>
-              <input id="end-alt" type="number" step="0.1" value="60" />
+              <label for="end-alt">End</label>
+              <div class="input-unit">
+                <input id="end-alt" type="number" step="any" value="60" />
+                <span class="input-unit__suffix">m</span>
+              </div>
             </div>
             <div class="field">
-              <label for="step-alt">Step (m)</label>
-              <input id="step-alt" type="number" step="0.1" min="0.001" value="10" />
+              <label for="step-alt">Step</label>
+              <div class="input-unit">
+                <input id="step-alt" type="number" step="any" min="0.001" value="10" />
+                <span class="input-unit__suffix">m</span>
+              </div>
             </div>
           </div>
           <div class="button-row">
@@ -88,55 +106,62 @@
             <button id="download-all" type="button">Download all</button>
           </div>
           <p class="panel__hint">
-            The step is always positive; a descending sweep is expressed by an end altitude below
-            the start. "Download all" issues one download per variant plus a sweep manifest, and
-            some browsers ask for permission to save multiple files.
+            The step is always positive; a descending sweep is an end altitude below the start.
+            "Download all" issues one download per variant plus a sweep manifest, and some
+            browsers ask permission to save multiple files.
           </p>
         </section>
 
         <section class="panel">
           <h2>Verification</h2>
-          <div id="verification-summary" class="summary-counts"></div>
           <div id="verification"></div>
         </section>
+
+        <details class="panel" open>
+          <summary>Source summary</summary>
+          <div id="source-summary"></div>
+        </details>
       </div>
 
       <div class="workspace">
         <section class="panel">
-          <h2>Generated variants</h2>
+          <h2>
+            Generated variants
+            <span class="text-muted" style="font-weight: 400; text-transform: none; letter-spacing: 0">
+              each written to CSV, parsed back, and compared to the source row by row
+            </span>
+          </h2>
           <div class="table-scroll">
             <table class="data">
               <thead>
                 <tr>
-                  <th class="num">altitude_m</th>
-                  <th class="num">rows</th>
-                  <th>verification</th>
-                  <th>filename</th>
-                  <th></th>
+                  <th scope="col" class="num">altitude_m</th>
+                  <th scope="col" class="num">rows</th>
+                  <th scope="col">verification</th>
+                  <th scope="col">filename</th>
+                  <th scope="col"><span class="visually-hidden">Download</span></th>
                 </tr>
               </thead>
               <tbody id="variant-rows"></tbody>
             </table>
           </div>
-          <p class="panel__hint">
-            Every variant is written to CSV, parsed back from that text, and compared against the
-            source row by row. Only a variant that passes can be downloaded.
-          </p>
         </section>
 
-        <section class="panel">
+        <section class="panel" style="display: flex; flex-direction: column; min-height: 0">
           <h2>Preview</h2>
-          <p id="preview-label" class="panel__hint">Select a variant to preview it.</p>
-          <div class="table-scroll">
+          <p id="preview-label" class="panel__hint" style="margin-top: 0">
+            Select a variant to preview it.
+          </p>
+          <div class="table-scroll" style="min-height: 0; overflow-y: auto">
             <table class="data">
               <thead>
                 <tr>
-                  <th class="num">#</th>
-                  <th class="num">east_m</th>
-                  <th class="num">north_m</th>
-                  <th class="num">altitude_m</th>
-                  <th class="num">heading_deg</th>
-                  <th class="num">speed_mps</th>
+                  <th scope="col" class="num">#</th>
+                  <th scope="col" class="num">east_m</th>
+                  <th scope="col" class="num">north_m</th>
+                  <th scope="col" class="num">altitude_m</th>
+                  <th scope="col" class="num">heading_deg</th>
+                  <th scope="col" class="num">speed_mps</th>
                 </tr>
               </thead>
               <tbody id="preview-rows"></tbody>
@@ -145,6 +170,10 @@
         </section>
       </div>
     </main>
+
+    <div class="app-statusbar">
+      <p id="status" class="status status--info">Loading&hellip;</p>
+    </div>
 
     <script type="module" src="app.js"></script>
   </body>

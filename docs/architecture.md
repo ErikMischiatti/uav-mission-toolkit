@@ -10,6 +10,7 @@ browser and pulls its JavaScript in as ES modules.
 index.html              launcher
 shared/js/*.js          the only place shared logic lives
 shared/css/common.css   the only place shared styling lives
+shared/vendor/leaflet/  Leaflet, vendored so the map works offline
 <tool>/index.html       markup for one tool
 <tool>/app.js           that tool's glue: state, events, rendering
 <tool>/style.css        that tool's small deviations from the shared CSS
@@ -20,7 +21,35 @@ docs/                   this directory
 The one hard rule: **geometry, coordinate conversion, file parsing and
 validation live in `shared/js/` and nowhere else.** A tool's `app.js` is allowed
 to know about the DOM and about its own workflow. It is not allowed to
-re-implement a distance formula, a CSV parser or a validation rule.
+re-implement a distance formula, a CSV parser, a validation rule or an undo
+stack.
+
+The same applies to the look of the thing. Every page uses one shell — header,
+context bar, sidebar, workspace, status bar — defined once in
+`shared/css/common.css`, and every colour, spacing step and control height comes
+from a custom property there. A tool's own `style.css` holds only what is
+genuinely specific to it, such as the trajectory canvas or the sweep badges.
+
+### The application shell
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ UAV Mission Toolkit │ Tool name          nav               │  header
+├────────────────────────────────────────────────────────────┤
+│ SITE file.json   FRAME ENU·m   ALT REF AGL        ✓ Valid  │  context bar
+├───────────────────┬────────────────────────────────────────┤
+│ controls          │                                        │
+│ (scrolls)         │   workspace: map or canvas             │
+│                   │   (takes the remaining height)         │
+├───────────────────┴────────────────────────────────────────┤
+│ status line                                                │  status bar
+└────────────────────────────────────────────────────────────┘
+```
+
+The context bar exists because the four things a reader most needs — what is
+loaded, which frame is active, what altitudes are measured against, and whether
+the document is valid — were previously only discoverable by scrolling through
+unrelated controls. The workspace, not the control column, gets the screen.
 
 ## Why no build step
 
@@ -46,12 +75,40 @@ messages in `shared/js/io.js` say so explicitly.
 | `validation.js` | Schema constants and all validation rules for sites, trajectories and altitude variants. |
 | `trajectory.js` | The trajectory format: CSV columns, document construction, path headings, metrics. |
 | `site_map.js` | Leaflet rendering of a site, in editable or read-only mode. |
-| `ui.js` | DOM helpers, findings rendering, status messages, number formatting, global error handlers. |
+| `ui.js` | DOM helpers, findings rendering, the validation verdict, the context bar, status messages, contextual help, global error handlers. |
+| `history.js` | Undo/redo. One implementation, used by every tool that edits a document. |
+| `geojson.js` | Generic GeoJSON import and export, and the mapping step that keeps it explicit. |
 
 Dependency direction is one way: `geo.js` depends on nothing; `validation.js`
-and `trajectory.js` depend on `geo.js` and `io.js`; `site_map.js` depends on
-`geo.js`, `io.js` and `ui.js`; every tool depends on the shared layer and never
-the reverse. There are no cycles.
+and `trajectory.js` depend on `geo.js` and `io.js`; `geojson.js` depends on
+`geo.js`, `io.js` and `validation.js`; `site_map.js` depends on `geo.js`,
+`io.js` and `ui.js`; `history.js` depends on nothing at all; every tool depends
+on the shared layer and never the reverse. There are no cycles.
+
+### Why undo/redo stores snapshots
+
+`history.js` keeps a deep copy of the document per operation rather than a pair
+of inverse commands. The documents here are small plain-JSON objects, so the
+memory is irrelevant, and the choice removes a class of bug that matters for
+this project in particular: an inverse command that is subtly wrong corrupts a
+document in a way nobody notices until it is flown, whereas a snapshot either
+restores the document exactly or fails loudly.
+
+The cost is that an entry records *that* something changed, not *what*. Each one
+therefore carries a human label, which is what the toolbar shows.
+
+A drag would otherwise leave one entry per pointer event. Callers either commit
+once at the end of the gesture, or pass a `coalesceKey` so consecutive pushes
+carrying the same key replace each other. Loading a document calls `reset()`, so
+undo can never walk backwards out of the file the user is looking at.
+
+### Why the trajectory editor cannot edit a site
+
+The trajectory editor loads a site as **read-only context**. It draws it, it
+expresses the trajectory in its frame, and it validates against it — and nothing
+in `trajectory_editor/` writes to the site object. Two places that can edit the
+same document is how two places end up disagreeing about it; there is one site
+editor, and it is `site_editor/`.
 
 `geo.js` is isolated on purpose. Replacing the flat-earth approximation with
 GeographicLib or proj4js means rewriting exactly two functions —

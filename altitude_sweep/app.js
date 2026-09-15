@@ -27,24 +27,24 @@ import {
   trajectoryToCsv,
   withAltitude,
 } from '../shared/js/trajectory.js';
-import {
-  ALTITUDE_REFERENCES,
-  severityCounts,
-  verifyAltitudeVariant,
-} from '../shared/js/validation.js';
+import { ALTITUDE_REFERENCES, verifyAltitudeVariant } from '../shared/js/validation.js';
 import {
   NO_VALUE,
   clear,
   definitionList,
   el,
   formatMeters,
+  helpFor,
   installGlobalErrorHandlers,
   must,
   numberToInput,
   readNumberInput,
   renderFindings,
+  renderVerdict,
   reportError,
+  setContext,
   setStatus,
+  summarizeFindings,
 } from '../shared/js/ui.js';
 
 const MANIFEST_URL = '../examples/manifest.json';
@@ -76,6 +76,7 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   cacheElements();
   installGlobalErrorHandlers(els.status);
+  must('#help-altref').append(helpFor('AGL'));
   fillAltitudeReferenceSelect();
   wireEvents();
   loadManifest();
@@ -87,7 +88,6 @@ function cacheElements() {
   els.loadExample = must('#load-example');
   els.csvFile = must('#csv-file');
   els.sourceAltRef = must('#source-alt-ref');
-  els.sourceLabel = must('#source-label');
   els.sourceSummary = must('#source-summary');
 
   els.startAlt = must('#start-alt');
@@ -96,11 +96,15 @@ function cacheElements() {
   els.generate = must('#generate');
   els.downloadAll = must('#download-all');
 
-  els.verificationSummary = must('#verification-summary');
   els.verification = must('#verification');
   els.variantRows = must('#variant-rows');
   els.previewLabel = must('#preview-label');
   els.previewRows = must('#preview-rows');
+
+  els.ctxSource = must('#ctx-source');
+  els.ctxRows = must('#ctx-rows');
+  els.ctxAltRef = must('#ctx-altref');
+  els.ctxVerdict = must('#ctx-verdict');
 }
 
 function fillAltitudeReferenceSelect() {
@@ -122,6 +126,7 @@ function wireEvents() {
     // nothing numerically, but the generated manifest must stay in step.
     renderSourceSummary();
     renderVariantTable();
+    renderContext();
   });
   els.generate.addEventListener('click', () => generateVariants());
   els.downloadAll.addEventListener('click', () => downloadAll());
@@ -183,6 +188,7 @@ async function loadSelectedExample() {
     if (ALTITUDE_REFERENCES.includes(reference)) {
       els.sourceAltRef.value = reference;
       renderSourceSummary();
+      renderContext();
       setStatus(
         els.status,
         `Loaded "${label}" with ${state.basePoints.length} rows. Altitude reference ` +
@@ -192,6 +198,7 @@ async function loadSelectedExample() {
     } else {
       els.sourceAltRef.value = '';
       renderSourceSummary();
+      renderContext();
       setStatus(
         els.status,
         `Loaded "${label}", but the manifest does not state an altitude reference. Choose one.`,
@@ -211,6 +218,7 @@ async function loadCsvFromFile(file) {
     // Nothing in a local file says what its altitudes are measured against.
     els.sourceAltRef.value = '';
     renderSourceSummary();
+    renderContext();
     setStatus(
       els.status,
       `Loaded "${file.name}" with ${state.basePoints.length} rows. Set the altitude reference ` +
@@ -238,13 +246,20 @@ function adoptCsv(text, label) {
   );
   state.variants = [];
   state.selectedVariantIndex = null;
-  els.sourceLabel.textContent = label;
   els.downloadAll.disabled = true;
 
   renderSourceSummary();
   renderVariantTable();
   renderVerification([]);
   renderPreview();
+  renderContext();
+}
+
+/** Keep the context bar in step with what is loaded. */
+function renderContext() {
+  setContext(els.ctxSource, state.sourceLabel, 'nothing loaded');
+  setContext(els.ctxRows, state.basePoints === null ? null : String(state.basePoints.length), '—');
+  setContext(els.ctxAltRef, els.sourceAltRef.value || null);
 }
 
 // --- sweep ------------------------------------------------------------------
@@ -477,7 +492,13 @@ function renderVariantTable() {
   clear(els.variantRows);
   if (state.variants.length === 0) {
     els.variantRows.append(
-      el('tr', {}, [el('td', { colspan: '5', text: 'No variants generated yet.' })])
+      el('tr', {}, [
+        el('td', {
+          colspan: '5',
+          class: 'is-empty',
+          text: 'No variants yet. Set a range and choose "Generate variants".',
+        }),
+      ])
     );
     return;
   }
@@ -519,11 +540,16 @@ function renderVariantTable() {
 }
 
 function renderVerification(findings) {
-  const counts = severityCounts(findings);
-  clear(els.verificationSummary);
-  els.verificationSummary.append(
-    el('span', { text: `${state.variants.length} variant(s)` }),
-    el('span', { text: `${counts.error} error(s)` })
+  renderVerdict(
+    els.ctxVerdict,
+    state.variants.length === 0
+      ? { level: 'idle', glyph: '·', text: 'Nothing generated' }
+      : {
+          ...summarizeFindings(findings),
+          ...(findings.length === 0
+            ? { text: `${state.variants.length} variants verified` }
+            : {}),
+        }
   );
   renderFindings(els.verification, findings, {
     emptyMessage:

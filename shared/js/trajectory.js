@@ -4,11 +4,11 @@
  * Both representations are documented in docs/file_formats.md.
  *
  * Important asymmetry, stated here so nobody has to rediscover it:
- * the JSON document carries the frame and the altitude reference; the CSV does
- * NOT. A CSV is a list of numbers and cannot describe what its altitude column
- * means. Any tool that consumes a trajectory CSV must obtain the altitude
- * reference from the user or from an accompanying JSON document, and this
- * toolkit refuses to guess one.
+ * the JSON document carries the frame, the altitude reference and the site
+ * context; the CSV does NOT. A CSV is a list of numbers and cannot describe
+ * what its altitude column means. Any tool that consumes a trajectory CSV must
+ * obtain the altitude reference from the user or from an accompanying JSON
+ * document, and this toolkit refuses to guess one.
  */
 
 import { bearingDeg, distance3dM, pathLengthM } from './geo.js';
@@ -98,15 +98,81 @@ export function trajectoryToCsv(points) {
 }
 
 /**
+ * Build the `site_context` block of a trajectory document.
+ *
+ * A trajectory has no origin of its own: its coordinates are metres in some
+ * site's local frame, and without knowing which site that is, the numbers
+ * cannot be put on the ground. This block records enough to answer that
+ * question — the site id, its name, its origin and its frame — so the file is
+ * self-describing.
+ *
+ * What it deliberately does not do is bind the trajectory to a *file*. There is
+ * no path and no filename here: the id is an explicit field of the site
+ * document, and a consumer still has to be given the site itself.
+ *
+ * Returns null for a trajectory drawn without a site, which stays a legitimate
+ * thing to do — the document then simply does not claim a frame it cannot back
+ * up.
+ *
+ * @param {object|null} site a validated site definition, or null
+ * @returns {object|null}
+ */
+export function buildSiteContext(site) {
+  if (site === null || typeof site !== 'object') return null;
+
+  const context = {};
+  if (typeof site.site_id === 'string' && site.site_id.trim() !== '') {
+    context.site_id = site.site_id;
+  }
+  if (typeof site.name === 'string' && site.name.trim() !== '') {
+    context.site_name = site.name;
+  }
+
+  const origin = site.origin;
+  if (
+    origin !== null &&
+    typeof origin === 'object' &&
+    Number.isFinite(origin.latitude_deg) &&
+    Number.isFinite(origin.longitude_deg)
+  ) {
+    context.origin = {
+      latitude_deg: roundTo(origin.latitude_deg, 9),
+      longitude_deg: roundTo(origin.longitude_deg, 9),
+    };
+    // The origin altitude is what ATO is measured from, so it travels too -
+    // but only when the site actually states it. Nothing is invented.
+    if (Number.isFinite(origin.altitude_amsl_m)) {
+      context.origin.altitude_amsl_m = roundTo(origin.altitude_amsl_m);
+    }
+  }
+
+  if (site.local_frame !== null && typeof site.local_frame === 'object') {
+    const frame = {};
+    if (typeof site.local_frame.type === 'string') frame.type = site.local_frame.type;
+    if (typeof site.local_frame.heading_reference === 'string') {
+      frame.heading_reference = site.local_frame.heading_reference;
+    }
+    if (Object.keys(frame).length > 0) context.local_frame = frame;
+  }
+
+  return Object.keys(context).length > 0 ? context : null;
+}
+
+/**
  * Assemble a trajectory JSON document. Every field that matters for
  * interpretation is required; there are no optional safety-critical arguments.
  *
+ * `site` is optional context, not a requirement: a trajectory may legitimately
+ * be drawn in an abstract local plane. When it is supplied, the resulting
+ * document records which frame it belongs to.
+ *
  * @param {{name: string, points: Array<object>, speedMps: number,
- *          altitudeReference: string, closed: boolean, description?: string}} spec
+ *          altitudeReference: string, closed: boolean, description?: string,
+ *          site?: object|null}} spec
  * @returns {object}
  */
 export function buildTrajectoryDocument(spec) {
-  const { name, points, speedMps, altitudeReference, closed, description } = spec;
+  const { name, points, speedMps, altitudeReference, closed, description, site } = spec;
 
   if (typeof name !== 'string' || name.trim() === '') {
     throw new Error('A trajectory document needs a non-empty name.');
@@ -145,6 +211,10 @@ export function buildTrajectoryDocument(spec) {
   if (typeof description === 'string' && description.trim() !== '') {
     document.description = description;
   }
+
+  const siteContext = buildSiteContext(site ?? null);
+  if (siteContext !== null) document.site_context = siteContext;
+
   return document;
 }
 

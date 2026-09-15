@@ -3,17 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="shared/favicon.svg" type="image/svg+xml" />
     <title>UAV Mission Toolkit</title>
     <meta
       name="description"
-      content="A small browser-based toolkit for preparing UAV missions: site editor, site viewer, trajectory editor and altitude sweep."
+      content="A browser-based toolkit for preparing UAV missions: define a site, design a trajectory in its local frame, generate verified altitude variants, and inspect any site definition."
     />
     <link rel="stylesheet" href="shared/css/common.css" />
   </head>
   <body>
     <header class="app-header">
       <h1>UAV Mission Toolkit</h1>
-      <p class="app-header__subtitle">v0.1 &middot; early development</p>
+      <p class="app-header__subtitle">Local mission preparation &middot; v0.1</p>
       <nav>
         <a href="docs/architecture.md">Architecture</a>
         <a href="docs/coordinate_frames.md">Coordinate frames</a>
@@ -22,74 +23,89 @@
     </header>
 
     <main class="launcher">
-      <section>
-        <p>
-          Four small, self-contained tools for preparing UAV missions. Everything runs locally in
-          the browser: there is no backend, no build step and no database. Files are read from and
-          written to your machine, and nothing is uploaded anywhere.
-        </p>
-        <p>
-          Coordinates are handled in one place: WGS84 latitude/longitude for the site origin, a
-          local ENU frame in metres for everything else, and headings in degrees clockwise from
-          true north. Altitudes always travel with an explicit reference (AGL, AMSL or ATO); the
-          toolkit never guesses one.
-        </p>
-      </section>
+      <p class="launcher__lede">
+        Four tools for preparing UAV missions on your own machine: define an operating site,
+        design a trajectory inside it, and generate verified altitude variants of that
+        trajectory.
+      </p>
+      <p class="launcher__sub">
+        Everything runs in the browser — no backend, no build step, no database, and nothing is
+        uploaded. The site origin is WGS84 latitude/longitude; everything else is metres in a
+        local ENU frame, with headings in degrees clockwise from true north. Altitudes always
+        carry an explicit reference (AGL, AMSL or ATO); the toolkit never guesses one.
+      </p>
 
       <section>
-        <h2>Tools</h2>
-        <div class="tool-grid">
+        <h2>Workflow</h2>
+        <div class="flow">
           <a class="tool-card" href="site_editor/index.html">
+            <span class="tool-card__step">Step 1</span>
             <h3>Site Editor</h3>
-            <p>Define an operating site on a map and export it as a generic site definition.</p>
+            <p>Define where you are allowed to fly, and the points you care about.</p>
             <ul>
               <li>Origin, safety polygon and altitude limits</li>
               <li>Mission points, draggable on the map</li>
-              <li>Live validation, no hidden defaults</li>
-              <li>Download <code>site.json</code></li>
+              <li>Validation as you edit, with no hidden defaults</li>
+              <li>Import geometry from GeoJSON, with an explicit mapping step</li>
             </ul>
+            <p class="tool-card__io">out: site.json</p>
           </a>
 
-          <a class="tool-card" href="site_viewer/index.html">
-            <h3>Site Viewer</h3>
-            <p>Read-only look at a site definition for sanity checking before a flight.</p>
-            <ul>
-              <li>Origin, safety area and mission points</li>
-              <li>Local ENU and WGS84 coordinates side by side</li>
-              <li>Dimensions, area and altitude band</li>
-              <li>The same validation rules as the editor</li>
-            </ul>
-          </a>
+          <div class="flow__arrow" aria-hidden="true">→</div>
 
           <a class="tool-card" href="trajectory_editor/index.html">
+            <span class="tool-card__step">Step 2</span>
             <h3>Trajectory Editor</h3>
-            <p>Sketch a path in the local plane and export it in a documented, generic format.</p>
+            <p>Draw the path inside that site, in the site's own local frame.</p>
             <ul>
               <li>Straight, circle, racetrack and figure-eight presets</li>
-              <li>Draggable control points</li>
-              <li>Altitude, target speed, path length and duration</li>
-              <li>Download JSON or CSV</li>
+              <li>Draggable control points, with undo and redo</li>
+              <li>Live checks against the loaded site's safety area and altitude band</li>
+              <li>Path length and a constant-speed duration estimate</li>
             </ul>
+            <p class="tool-card__io">in: site.json &middot; out: trajectory.json / .csv</p>
           </a>
 
+          <div class="flow__arrow" aria-hidden="true">→</div>
+
           <a class="tool-card" href="altitude_sweep/index.html">
+            <span class="tool-card__step">Step 3</span>
             <h3>Altitude Sweep</h3>
-            <p>Produce altitude variants of a trajectory and prove nothing else moved.</p>
+            <p>Produce one variant per altitude, and prove nothing else moved.</p>
             <ul>
               <li>Start, end and step altitude</li>
               <li>Per-variant preview</li>
-              <li>Round-trip verification of every generated file</li>
-              <li>Individual or bulk download</li>
+              <li>Every generated file is parsed back and compared to the source</li>
+              <li>Only a variant that passes can be downloaded</li>
             </ul>
+            <p class="tool-card__io">in: trajectory.csv &middot; out: one CSV per altitude</p>
           </a>
         </div>
       </section>
 
       <section>
+        <h2>Inspection</h2>
+        <a class="tool-card tool-card--aside" href="site_viewer/index.html">
+          <span class="tool-card__step">Any time</span>
+          <h3>Site Viewer</h3>
+          <p>
+            A read-only look at a site definition, for checking one before a flight. It runs the
+            same validation rules as the editor and never modifies the file.
+          </p>
+          <ul>
+            <li>Origin, safety area and mission points on a map</li>
+            <li>Local ENU and WGS84 coordinates side by side</li>
+            <li>Dimensions, area, perimeter and altitude band</li>
+          </ul>
+          <p class="tool-card__io">in: site.json</p>
+        </a>
+      </section>
+
+      <section>
         <h2>Running it</h2>
-        <p>
-          The tools use ES modules and <code>fetch</code>, so they need to be served over HTTP.
-          Opening the files directly with <code>file://</code> will not work.
+        <p class="launcher__sub" style="margin-bottom: var(--space-3)">
+          The tools use ES modules and <code>fetch</code>, so they have to be served over HTTP.
+          Opening the files with <code>file://</code> will not work. There is nothing to install.
         </p>
         <pre class="snippet">python3 -m http.server 8000
 # then open http://localhost:8000</pre>
@@ -97,8 +113,8 @@
 
       <section>
         <h2>Example data</h2>
-        <p>
-          The repository ships one fictional demo site under <code>examples/</code>, listed in
+        <p class="launcher__sub">
+          One fictional demo site ships under <code>examples/</code>, indexed by
           <code>examples/manifest.json</code>. Its coordinates and geometry were invented for this
           repository and do not correspond to any real operating location.
         </p>
@@ -106,10 +122,12 @@
 
       <section>
         <h2>Scope</h2>
-        <p>
-          This is early, experimental software for preparing and inspecting mission data. It is
-          not a flight-safety system, it does not talk to any vehicle, and nothing it produces
-          should be flown without independent review. See <code>SECURITY.md</code>.
+        <p class="note">
+          This is early, experimental software for preparing and inspecting mission data. Its
+          validation findings are planning aids, not flight certification: it provides no
+          certified geofencing, no terrain model, no collision avoidance and no flight
+          authorisation. It does not talk to any vehicle. Nothing it produces should be flown
+          without independent review — see <code>SECURITY.md</code>.
         </p>
       </section>
     </main>

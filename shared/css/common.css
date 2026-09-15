@@ -1,10 +1,32 @@
 /*
  * Shared styling for the UAV Mission Toolkit.
  *
- * Plain CSS custom properties, no preprocessor and no framework. The intent is
- * a quiet engineering-tool look: neutral surfaces, one accent colour, tabular
- * numerals for anything a reader might compare row by row.
+ * Plain CSS custom properties, no preprocessor and no framework.
+ *
+ * The target is a quiet engineering-tool look, closer to a GIS or robotics
+ * console than to a consumer web app: neutral surfaces, one accent colour used
+ * only for the active thing, colour reserved for meaning, tabular numerals for
+ * anything a reader might compare row by row, and no decoration that does not
+ * carry information.
+ *
+ * Structure of this file:
+ *   1. tokens            colours, spacing, radii, type
+ *   2. reset             the few global rules
+ *   3. app shell         header, context bar, layout, sidebar, workspace
+ *   4. panels            the grouping unit inside the sidebar
+ *   5. forms             fields, units, labels, help
+ *   6. buttons           the four levels of the hierarchy
+ *   7. status and findings
+ *   8. key/value lists and tables
+ *   9. map and canvas
+ *  10. launcher          the root index.html
+ *  11. utilities
+ *
+ * Every colour has a light and a dark value. Nothing is defined only inside a
+ * media query.
  */
+
+/* ---------------------------------------------------------------- 1. tokens */
 
 :root {
   color-scheme: light dark;
@@ -12,57 +34,121 @@
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  --bg: #f6f7f9;
+  /* Surfaces, from furthest back to nearest front. */
+  --bg: #f4f6f8;
   --surface: #ffffff;
-  --surface-alt: #f0f2f5;
-  --border: #d6dae1;
-  --border-strong: #b6bcc6;
-  --text: #16191d;
-  --text-muted: #5b6472;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef1f5;
 
-  --accent: #1d4ed8;
+  --border: #dbdfe6;
+  --border-strong: #b4bbc6;
+
+  --text: #14171c;
+  --text-muted: #58616f;
+
+  /* One accent. It means "active" or "selected", never "important". */
+  --accent: #1a56db;
+  --accent-hover: #1442ad;
   --accent-contrast: #ffffff;
+  --accent-soft: #e8effd;
 
-  --error: #b42318;
-  --error-bg: #fdeceb;
-  --warning: #a15c07;
-  --warning-bg: #fdf4e3;
-  --ok: #17694a;
-  --ok-bg: #e8f5ef;
-  --info: #1f4f82;
+  /* Semantic colours. Each has a text colour, a fill and a border. */
+  --danger: #b42318;
+  --danger-bg: #fdecea;
+  --danger-border: #f3b5ae;
+
+  --warning: #8a5300;
+  --warning-bg: #fdf3e2;
+  --warning-border: #eccb8d;
+
+  --success: #12674a;
+  --success-bg: #e6f4ee;
+  --success-border: #a5d7c2;
+
+  --info: #1d4f80;
   --info-bg: #eaf1f9;
+  --info-border: #b3cde7;
 
-  --radius: 6px;
+  /* Geometry colours. Kept distinct from the UI palette so that map and canvas
+     features stay recognisable when the surrounding chrome changes. */
+  --geo-safety: #d4541f;
+  --geo-safety-fill: #f9782e;
+  --geo-point: #1a56db;
+  --geo-origin: #0b7285;
+  --geo-path: #1a56db;
+  --geo-selected: #b8420f;
+
+  /* A 4 px scale. Steps 1-3 are within a control, 4-6 between things. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  /*
+   * One height for every control. A bare <select> and an <input> wrapped in a
+   * bordered .input-unit otherwise differ by a couple of pixels, which is
+   * invisible on its own and unmistakable once three of them sit in a row.
+   */
+  --control-height: 28px;
+
+  /* Deliberately minimal. One shadow, used only for things that float above
+     the page (popovers), never for panels. */
+  --shadow-popover: 0 4px 16px rgba(10, 14, 20, 0.18);
+
+  --header-height: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --surface: #1c2027;
-    --surface-alt: #232830;
-    --border: #333a45;
-    --border-strong: #4a5362;
-    --text: #e6e9ee;
-    --text-muted: #9aa4b2;
+    --bg: #0f1216;
+    --surface: #161b22;
+    --surface-raised: #1d232c;
+    --surface-sunken: #12161c;
 
-    --accent: #6f9bff;
-    --accent-contrast: #0d1117;
+    --border: #2a313b;
+    --border-strong: #3e4753;
 
-    --error: #ff9b91;
-    --error-bg: #3a1f1d;
-    --warning: #f1c27a;
-    --warning-bg: #35291a;
-    --ok: #8fdcb8;
-    --ok-bg: #16302a;
+    --text: #e5e9ef;
+    --text-muted: #98a2b1;
+
+    --accent: #6ea0ff;
+    --accent-hover: #8db4ff;
+    --accent-contrast: #0b0e13;
+    --accent-soft: #17233a;
+
+    --danger: #ff958a;
+    --danger-bg: #351c1a;
+    --danger-border: #6b3229;
+
+    --warning: #e8b76a;
+    --warning-bg: #302517;
+    --warning-border: #5e4624;
+
+    --success: #6fd3a8;
+    --success-bg: #142c25;
+    --success-border: #2d5a47;
+
     --info: #9cc4ee;
-    --info-bg: #1b2837;
+    --info-bg: #17232f;
+    --info-border: #2e4356;
+
+    --geo-safety: #ff8a4c;
+    --geo-safety-fill: #ff8a4c;
+    --geo-point: #6ea0ff;
+    --geo-origin: #4dd0e1;
+    --geo-path: #6ea0ff;
+    --geo-selected: #ffb454;
+
+    --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 }
+
+/* ----------------------------------------------------------------- 2. reset */
 
 * {
   box-sizing: border-box;
@@ -88,13 +174,16 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  min-height: 100vh;
 }
 
 a {
   color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-hover);
 }
 
 code,
@@ -104,92 +193,306 @@ code,
   font-variant-numeric: tabular-nums;
 }
 
-/* --- header ------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- 3. app shell */
+
+/*
+ * A tool page is a full-height grid: header, then the working area, then a
+ * status bar. Only the sidebar and the workspace scroll, so the map or canvas
+ * keeps the whole height it is given instead of being pushed off-screen by a
+ * long control column. This is the single biggest layout decision in the file.
+ */
+body.tool {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
 
 .app-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  align-items: center;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-height: var(--header-height);
+  padding: 0 var(--space-4);
+}
+
+.app-header__brand {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header__brand:hover {
+  color: var(--text);
+}
+
+.app-header__divider {
+  background: var(--border-strong);
+  height: 14px;
+  width: 1px;
 }
 
 .app-header h1 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   margin: 0;
+  white-space: nowrap;
 }
 
-.app-header .app-header__subtitle {
+.app-header__subtitle {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-header nav {
-  margin-left: auto;
   display: flex;
-  gap: var(--space-3);
-  font-size: 13px;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 
-/* --- layout ------------------------------------------------------------- */
+.app-header nav a {
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px var(--space-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header nav a:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.app-header nav a[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/*
+ * The context bar answers, at a glance and without scrolling: what is loaded,
+ * which frame it is in, what altitudes are measured against, and whether it is
+ * valid. Those are the four things a reader otherwise has to infer from
+ * unrelated controls.
+ */
+.context-bar {
+  align-items: center;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
+}
+
+.context {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.context__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.context__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context__value--muted {
+  color: var(--text-muted);
+}
+
+.context-bar__spacer {
+  margin-left: auto;
+}
+
+/* A compact validation verdict: "Valid", or "2 errors · 1 warning". */
+.verdict {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.verdict--ok {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success);
+}
+
+.verdict--warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+  color: var(--warning);
+}
+
+.verdict--error {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.verdict--idle {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* The glyph is redundant with the colour on purpose: colour alone must never
+   be the only carrier of a safety-relevant state. */
+.verdict__glyph {
+  font-family: var(--font-mono);
+}
+
+/* An unsaved-changes marker. */
+.dirty-dot {
+  background: var(--warning);
+  border-radius: 50%;
+  display: inline-block;
+  height: 6px;
+  width: 6px;
+}
 
 .tool-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 400px) 1fr;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  align-items: start;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  min-height: 0;
 }
 
 .tool-layout--wide-sidebar {
-  grid-template-columns: minmax(360px, 480px) 1fr;
-}
-
-@media (max-width: 900px) {
-  .tool-layout,
-  .tool-layout--wide-sidebar {
-    grid-template-columns: 1fr;
-  }
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
 }
 
 .sidebar {
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  min-height: 0;
   min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
 }
 
 .workspace {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-2);
+  min-height: 0;
   min-width: 0;
+  padding: var(--space-3);
 }
 
-/* --- panels ------------------------------------------------------------- */
+/* The map or canvas takes every pixel the workspace does not need. */
+.workspace__canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app-statusbar {
+  align-items: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-3);
+  min-height: 30px;
+  padding: var(--space-1) var(--space-4);
+}
+
+/* The non-tool pages (the launcher) scroll normally. */
+.app-footer {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+/*
+ * Tablet-ish widths: stack, and let the page scroll instead of trapping the
+ * workspace in a height it cannot use. Desktop remains the primary target.
+ */
+@media (max-width: 900px) {
+  body.tool {
+    height: auto;
+    overflow: visible;
+  }
+
+  .tool-layout,
+  .tool-layout--wide-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    border-bottom: 1px solid var(--border);
+    border-right: none;
+    overflow-y: visible;
+  }
+
+  .workspace__canvas {
+    min-height: 420px;
+  }
+}
+
+/* ---------------------------------------------------------------- 4. panels */
 
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
 }
 
 .panel > h2 {
-  font-size: 13px;
+  align-items: baseline;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  gap: var(--space-2);
+  letter-spacing: 0.06em;
   margin: 0 0 var(--space-3);
   text-transform: uppercase;
-  color: var(--text-muted);
 }
 
-.panel > h3 {
-  font-size: 13px;
+.panel > h3,
+.panel h3 {
+  font-size: 12px;
   font-weight: 600;
   margin: var(--space-4) 0 var(--space-2);
 }
@@ -200,7 +503,40 @@ code,
   margin: var(--space-2) 0 0;
 }
 
-/* --- forms -------------------------------------------------------------- */
+.panel__hint:first-child {
+  margin-top: 0;
+}
+
+/* A collapsible panel, for controls that are not needed on every edit. */
+details.panel > summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+details.panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.panel > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+details.panel[open] > summary::before {
+  content: "▾ ";
+}
+
+details.panel[open] > summary {
+  margin-bottom: var(--space-3);
+}
+
+/* ----------------------------------------------------------------- 5. forms */
 
 .field {
   display: flex;
@@ -210,20 +546,91 @@ code,
   min-width: 0;
 }
 
-.field > label,
-.field-label {
-  font-size: 12px;
-  color: var(--text-muted);
+.field:last-child {
+  margin-bottom: 0;
 }
 
+.field > label,
+.field-label,
+.fieldset__legend {
+  align-items: baseline;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  gap: var(--space-1);
+}
+
+/*
+ * `align-items: end` matters more than it looks: labels in a row are not all
+ * the same length, so one of them wraps to two lines at some sidebar width and
+ * would otherwise push its own control below its neighbours'. Bottom-aligning
+ * keeps the inputs on one line whatever the labels do.
+ *
+ * For that to work the fields in a row must have identical vertical margins,
+ * so the row owns the bottom margin and its children have none. Leaving the
+ * `.field:last-child { margin-bottom: 0 }` rule to apply inside a row is what
+ * previously tipped the last column 12 px out of line with the others.
+ */
 .field-grid {
+  align-items: end;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--space-3);
+}
+
+.field-grid > .field,
+.field-grid > .field:last-child {
+  margin-bottom: 0;
+}
+
+.field-grid:last-child {
+  margin-bottom: 0;
 }
 
 .field-grid--three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* A numeric input with its unit rendered inside the control, so the unit is
+   visible without reading the label. */
+.input-unit {
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: var(--control-height);
+  overflow: hidden;
+}
+
+.input-unit:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The wrapper already draws the border and owns the height. */
+.input-unit > input {
+  border: none;
+  border-radius: 0;
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+}
+
+.input-unit > input:focus-visible {
+  outline: none;
+}
+
+.input-unit__suffix {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 var(--space-2) 0 var(--space-1);
 }
 
 input[type="text"],
@@ -233,12 +640,29 @@ select,
 textarea {
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
   font-size: 13px;
-  padding: 6px 8px;
+  /*
+   * A fixed height, not a minimum: an <input>'s intrinsic content height is a
+   * little taller than the text it holds, so a minimum leaves a bare control
+   * and one wrapped in .input-unit two pixels apart.
+   */
+  height: var(--control-height);
+  padding: 0 var(--space-2);
   width: 100%;
+}
+
+textarea {
+  height: auto;
+  min-height: calc(var(--control-height) * 2);
+  padding: var(--space-1) var(--space-2);
+}
+
+input[type="file"] {
+  height: auto;
+  min-height: var(--control-height);
 }
 
 input[type="number"],
@@ -247,16 +671,41 @@ input.num {
   font-variant-numeric: tabular-nums;
 }
 
-input:focus-visible,
-select:focus-visible,
-button:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
+input[aria-invalid="true"],
 input:invalid {
-  border-color: var(--error);
+  border-color: var(--danger);
+}
+
+/* A file input styled to look like the rest of the controls rather than like
+   the browser's default two-tone widget. */
+input[type="file"] {
+  cursor: pointer;
+  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+}
+
+input[type="file"]::file-selector-button {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  margin-right: var(--space-2);
+  padding: 2px var(--space-2);
+}
+
+input[type="file"]::file-selector-button:hover {
+  border-color: var(--accent);
 }
 
 .checkbox {
@@ -267,39 +716,114 @@ input:invalid {
 }
 
 .checkbox input {
+  accent-color: var(--accent);
   width: auto;
 }
 
-/* --- buttons ------------------------------------------------------------ */
+.checkbox label {
+  font-size: 12px;
+}
 
-button {
-  background: var(--surface-alt);
+/* An inline error, rendered next to the input it belongs to. */
+.field__error {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/*
+ * Contextual help for the unavoidable jargon (ENU, AGL, AMSL, ATO, heading
+ * conventions). A button rather than a bare abbr so it is reachable by
+ * keyboard; the explanation is short by design.
+ */
+.help {
+  background: none;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: help;
+  font-size: 9px;
+  height: 13px;
+  line-height: 1;
+  padding: 0;
+  width: 13px;
+}
+
+.help:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------------- 6. buttons */
+
+/*
+ * Four levels, and only four:
+ *   .primary   the one action that completes the task on this page
+ *   (default)  a normal secondary action
+ *   .quiet     a toolbar or inline action, no chrome until hovered
+ *   .danger    removes or discards something
+ */
+button {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   color: var(--text);
   cursor: pointer;
   font-family: inherit;
-  font-size: 13px;
-  padding: 6px 12px;
+  font-size: 12px;
+  padding: 5px var(--space-3);
+  white-space: nowrap;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
 }
 
 button:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text-muted);
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button.primary:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+button.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+button.quiet:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  color: var(--text);
 }
 
 button.danger {
-  color: var(--error);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: var(--danger);
 }
 
 .button-row {
@@ -308,103 +832,172 @@ button.danger {
   gap: var(--space-2);
 }
 
-/* --- status and findings ------------------------------------------------ */
+.button-row--end {
+  justify-content: flex-end;
+}
+
+/* A grouped pair or triple of related toolbar buttons. */
+.button-group {
+  display: inline-flex;
+}
+
+.button-group > button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.button-group > button:first-child {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  margin-left: 0;
+}
+
+.button-group > button:last-child {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.button-group > button:only-child {
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------- 7. status and findings */
 
 .status {
-  border-radius: var(--radius);
-  font-size: 13px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
   margin: 0;
   padding: var(--space-2) var(--space-3);
 }
 
 .status--info {
   background: var(--info-bg);
+  border-color: var(--info-border);
   color: var(--info);
 }
 
 .status--ok {
-  background: var(--ok-bg);
-  color: var(--ok);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success);
 }
 
 .status--warning {
   background: var(--warning-bg);
+  border-color: var(--warning-border);
   color: var(--warning);
 }
 
 .status--error {
-  background: var(--error-bg);
-  color: var(--error);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* The status line in the footer bar: one line, never wrapping the layout. */
+.app-statusbar .status {
+  background: none;
+  border: none;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-statusbar .status--ok {
+  color: var(--success);
+}
+
+.app-statusbar .status--info {
+  color: var(--text-muted);
 }
 
 .finding-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 .finding {
+  background: var(--surface-sunken);
   border-left: 3px solid var(--border-strong);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  font-size: 13px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12px;
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  background: var(--surface-alt);
 }
 
 .finding--error {
-  background: var(--error-bg);
-  border-left-color: var(--error);
+  background: var(--danger-bg);
+  border-left-color: var(--danger);
+  color: var(--danger);
 }
 
 .finding--warning {
   background: var(--warning-bg);
   border-left-color: var(--warning);
+  color: var(--warning);
 }
 
 .finding--info {
-  background: var(--info-bg);
-  border-left-color: var(--info);
+  background: var(--surface-sunken);
+  border-left-color: var(--border-strong);
+  color: var(--text-muted);
 }
 
+/*
+ * The "everything is fine" state is a single quiet line, not a green card.
+ * A page covered in success boxes trains the reader to ignore the panel, which
+ * is exactly the wrong habit for a validation surface.
+ */
 .finding--ok {
-  background: var(--ok-bg);
-  border-left-color: var(--ok);
-  color: var(--ok);
+  background: none;
+  border-left-color: var(--success);
+  color: var(--text-muted);
 }
 
 .finding__severity {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   margin-right: var(--space-2);
   text-transform: uppercase;
 }
 
 .finding__path {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   margin-top: var(--space-1);
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
-.summary-counts {
+/* Filter chips above a finding list. */
+.finding-filter {
   display: flex;
-  gap: var(--space-3);
-  font-size: 12px;
-  color: var(--text-muted);
+  gap: var(--space-1);
   margin-bottom: var(--space-2);
 }
 
-/* --- key/value lists ---------------------------------------------------- */
+.summary-counts {
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+/* ------------------------------------------- 8. key/value lists and tables */
 
 .kv {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: var(--space-1) var(--space-3);
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   margin: 0;
 }
 
@@ -421,8 +1014,6 @@ button.danger {
   overflow-wrap: anywhere;
 }
 
-/* --- tables ------------------------------------------------------------- */
-
 .table-scroll {
   overflow-x: auto;
 }
@@ -436,14 +1027,21 @@ table.data {
 table.data th,
 table.data td {
   border-bottom: 1px solid var(--border);
-  padding: 4px 6px;
+  padding: 3px var(--space-1);
   text-align: left;
   white-space: nowrap;
 }
 
-table.data th {
+table.data thead th {
+  background: var(--surface);
   color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.03em;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 table.data td.num,
@@ -453,24 +1051,49 @@ table.data th.num {
   text-align: right;
 }
 
+/* Table controls are denser than form controls; the shared height would make
+   every row twice as tall as it needs to be. */
 table.data input,
 table.data select {
   font-size: 12px;
-  padding: 2px 4px;
+  height: auto;
+  min-height: 0;
+  padding: 2px var(--space-1);
 }
 
 table.data tr.is-invalid td {
-  background: var(--error-bg);
+  background: var(--danger-bg);
 }
 
-/* --- map ---------------------------------------------------------------- */
+/* The selected row, in any table that has a selection. */
+table.data tr.is-selected td {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 
-.map {
-  background: var(--surface-alt);
+table.data td.is-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+/* An empty state that is a sentence, not a blank box. */
+.empty-state {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+/* ------------------------------------------------------- 9. map and canvas */
+
+.map,
+.trajectory-canvas {
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  height: min(70vh, 640px);
-  min-height: 360px;
+  border-radius: var(--radius-md);
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 
@@ -480,55 +1103,162 @@ table.data tr.is-invalid td {
 }
 
 .map-handle--vertex {
-  background: #f97316;
+  background: var(--geo-safety-fill);
   border: 2px solid #ffffff;
   cursor: move;
 }
 
 .map-handle--point {
-  background: #2563eb;
+  background: var(--geo-point);
   border: 2px solid #ffffff;
 }
 
-/* Leaflet injects its own attribution colours; keep them legible in dark mode. */
+/* Leaflet injects its own colours; keep them legible in both themes. */
 .leaflet-container {
-  background: var(--surface-alt);
+  background: var(--surface-sunken);
   font-family: var(--font-ui);
 }
 
-/* --- launcher (root index.html) ----------------------------------------- */
+/*
+ * Tile-less fallback. Leaflet is vendored and works offline, but the tiles are
+ * fetched from the network. When they cannot be loaded the map keeps every
+ * geometry and editing feature and gets a plain graticule background, so the
+ * area still reads as a map rather than as a failed image.
+ *
+ * Leaflet puts .leaflet-container on the element it was given, so this is the
+ * same node as .map — a descendant selector would never match.
+ */
+.map--tileless.leaflet-container {
+  background-color: var(--surface-sunken);
+  background-image:
+    linear-gradient(to right, var(--border-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-strong) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.map-tile-notice {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  font-size: 11px;
+  padding: 3px var(--space-2);
+}
+
+/* Shown instead of the map when Leaflet could not be loaded at all. */
+.map--unavailable {
+  align-items: center;
+  color: var(--danger);
+  display: flex;
+  font-size: 12px;
+  justify-content: center;
+  padding: var(--space-5);
+  text-align: center;
+}
+
+/* The toolbar that sits above a map or canvas. */
+.workspace-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 26px;
+}
+
+.workspace-toolbar__spacer {
+  margin-left: auto;
+}
+
+.workspace-toolbar__readout {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A compact legend for the geometry on a map or canvas. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.legend__item {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  gap: var(--space-1);
+}
+
+.legend__swatch {
+  border-radius: 2px;
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+}
+
+/* -------------------------------------------------------------- 10. launcher */
 
 .launcher {
   margin: 0 auto;
-  max-width: 980px;
-  padding: var(--space-5) var(--space-4);
+  max-width: 1040px;
+  padding: var(--space-6) var(--space-4) var(--space-5);
 }
 
-.launcher > section {
-  margin-bottom: var(--space-5);
+.launcher__lede {
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0 0 var(--space-3);
+  max-width: 68ch;
+}
+
+.launcher__sub {
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 68ch;
+}
+
+.launcher section {
+  margin-top: var(--space-6);
 }
 
 .launcher h2 {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   margin: 0 0 var(--space-3);
+  text-transform: uppercase;
 }
 
-.tool-grid {
+/*
+ * The three workflow tools sit in one row, in order, with the arrows between
+ * them; the inspection tool is separate. A four-up grid would imply that all
+ * four are interchangeable, which is the wrong mental model.
+ */
+.flow {
+  align-items: stretch;
   display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.flow__arrow {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 16px;
+  justify-content: center;
 }
 
 .tool-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   color: inherit;
-  display: block;
+  display: flex;
+  flex-direction: column;
   padding: var(--space-4);
   text-decoration: none;
   transition: border-color 120ms ease;
@@ -539,27 +1269,63 @@ table.data tr.is-invalid td {
   border-color: var(--accent);
 }
 
+.tool-card__step {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+}
+
 .tool-card h3 {
-  font-size: 15px;
+  font-size: 14px;
   margin: 0 0 var(--space-2);
 }
 
 .tool-card p {
   color: var(--text-muted);
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
 }
 
 .tool-card ul {
   color: var(--text-muted);
   font-size: 12px;
   margin: 0;
-  padding-left: 18px;
+  padding-left: 16px;
+}
+
+.tool-card li {
+  margin-bottom: 2px;
+}
+
+.tool-card__io {
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.tool-card--aside {
+  max-width: 520px;
+}
+
+@media (max-width: 860px) {
+  .flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .flow__arrow {
+    transform: rotate(90deg);
+  }
 }
 
 pre.snippet {
-  background: var(--surface-alt);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 12px;
   margin: 0;
@@ -567,14 +1333,93 @@ pre.snippet {
   padding: var(--space-3);
 }
 
-/* --- misc --------------------------------------------------------------- */
+.note {
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 68ch;
+  padding-left: var(--space-3);
+}
 
-.app-footer {
+/* ------------------------------------------------------------ 11. dialogs */
+
+/*
+ * A native <dialog>, so focus trapping, Escape-to-close and the backdrop come
+ * from the browser rather than from hand-written JavaScript that would get them
+ * subtly wrong.
+ */
+dialog.modal {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  color: var(--text);
+  max-height: min(80vh, 720px);
+  max-width: min(760px, calc(100vw - 2 * var(--space-4)));
+  padding: 0;
+  width: 100%;
+}
+
+dialog.modal::backdrop {
+  background: rgba(10, 14, 20, 0.5);
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.modal__header {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+}
+
+.modal__header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal__header p {
   color: var(--text-muted);
   font-size: 12px;
-  padding: var(--space-4);
-  text-align: center;
+  margin: var(--space-1) 0 0;
 }
+
+.modal__content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+}
+
+.modal__footer {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4);
+}
+
+.modal__footer .modal__note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-right: auto;
+}
+
+/* A feature row that this build cannot import. */
+tr.is-unsupported td {
+  color: var(--text-muted);
+}
+
+.reason {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: normal;
+}
+
+/* ------------------------------------------------------------ 12. utilities */
 
 .visually-hidden {
   clip: rect(0 0 0 0);
@@ -584,4 +1429,14 @@ pre.snippet {
   position: absolute;
   white-space: nowrap;
   width: 1px;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
