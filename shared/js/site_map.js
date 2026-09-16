@@ -56,6 +56,7 @@ export class SiteMapView {
    *   onMissionPointMoved?: (id: string, enu: {east_m:number,north_m:number}) => void,
    *   onVertexMoved?: (index: number, enu: {east_m:number,north_m:number}) => void,
    *   onTileError?: () => void,
+   *   onViewChanged?: () => void,
    * }} [options]
    */
   constructor(container, options = {}) {
@@ -94,6 +95,12 @@ export class SiteMapView {
     this.tileLayer.on('tileload', () => {
       this.tileFailureCount = 0;
     });
+
+    // Panning and zooming are reported so a tool can persist the viewport.
+    // Leaflet fires these at the end of a gesture, not during it.
+    if (this.options.onViewChanged) {
+      this.map.on('moveend zoomend', () => this.options.onViewChanged());
+    }
 
     this.L.control.scale({ imperial: false }).addTo(this.map);
 
@@ -163,6 +170,43 @@ export class SiteMapView {
     this.map.fitBounds(this.L.latLngBounds(this.geometryLatLngs), {
       padding: [FIT_PADDING_PX, FIT_PADDING_PX],
     });
+  }
+
+  /**
+   * The current centre and zoom, in the shape a tool persists.
+   * @returns {{latitude_deg: number, longitude_deg: number, zoom: number}}
+   */
+  viewState() {
+    const centre = this.map.getCenter();
+    return { latitude_deg: centre.lat, longitude_deg: centre.lng, zoom: this.map.getZoom() };
+  }
+
+  /**
+   * Restore a previously saved viewport instead of fitting to the geometry.
+   *
+   * Refuses anything it cannot use rather than moving the map somewhere
+   * arbitrary, so a corrupt stored viewport falls back to a normal fit.
+   *
+   * @param {unknown} view
+   * @returns {boolean} whether the view was applied
+   */
+  restoreView(view) {
+    if (
+      view === null ||
+      typeof view !== 'object' ||
+      !Number.isFinite(view.latitude_deg) ||
+      !Number.isFinite(view.longitude_deg) ||
+      !Number.isFinite(view.zoom)
+    ) {
+      return false;
+    }
+    try {
+      this.map.setView([view.latitude_deg, view.longitude_deg], view.zoom);
+      return true;
+    } catch {
+      // An out-of-range zoom or latitude is Leaflet's to reject; fall back.
+      return false;
+    }
   }
 
   /** Leaflet needs a nudge when its container was hidden or resized. */

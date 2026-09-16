@@ -23,6 +23,13 @@ import {
 } from '../shared/js/geojson.js';
 import { History, attachHistoryControls } from '../shared/js/history.js';
 import {
+  DraftStore,
+  LOAD_STATUS,
+  debounce,
+  looksLikeMapView,
+  looksLikeSiteDocument,
+} from '../shared/js/persistence.js';
+import {
   downloadJson,
   fetchJson,
   parseJson,
@@ -66,6 +73,12 @@ const MANIFEST_URL = '../examples/manifest.json';
 const MIN_POLYGON_VERTICES = 3;
 /** Decimals kept for local coordinates written to file: 1 mm. */
 const COORDINATE_DECIMALS = 3;
+/**
+ * How long editing has to pause before the draft is written. Long enough that
+ * typing a coordinate is one write rather than one per keystroke, short enough
+ * that a reload a moment later still has the edit.
+ */
+const DRAFT_SAVE_DELAY_MS = 400;
 
 const state = {
   /** @type {object|null} */
@@ -80,6 +93,25 @@ const state = {
   history: new History(),
   /** True once the site differs from what was loaded. */
   dirty: false,
+
+  /**
+   * The document being edited, kept in this browser so a reload does not lose
+   * it. This is recovery, not storage: the exported file is still the artefact
+   * that matters, and the draft says so in the UI.
+   */
+  draftStore: new DraftStore({
+    slot: 'site_editor:draft',
+    accept: looksLikeSiteDocument,
+  }),
+  /** Map centre and zoom, in its own slot so a bad viewport cannot cost a draft. */
+  viewStore: new DraftStore({
+    slot: 'site_editor:view',
+    accept: looksLikeMapView,
+  }),
+  /** True when what is on screen came back from a draft rather than a file. */
+  restoredFromDraft: false,
+  /** Set once, so a storage failure is reported but does not nag on every edit. */
+  saveFailureReported: false,
 };
 
 const els = {};
@@ -91,7 +123,18 @@ document.addEventListener('DOMContentLoaded', () => {
   populateSelects();
   wireEvents();
   initMap();
-  loadDemoSite();
+  // A draft takes precedence over the demo: it is the user's own work, and
+  // silently replacing it with the example would be the one unrecoverable
+  // thing this feature could do.
+  if (!restoreDraft()) loadDemoSite();
+
+  // A reload can arrive inside the debounce window. pagehide fires in that
+  // path (and on mobile back/forward navigation, which 'unload' does not),
+  // so the pending write happens before the page goes away.
+  window.addEventListener('pagehide', () => {
+    scheduleDraftSave.flush();
+    scheduleViewSave.flush();
+  });
 });
 
 function cacheElements() {
@@ -124,6 +167,9 @@ function cacheElements() {
   els.redo = must('#redo');
   els.siteId = must('#site-id');
   els.ctxDirty = must('#ctx-dirty');
+
+  els.discardDraft = must('#discard-draft');
+  els.ctxDraft = must('#ctx-draft');
 
   els.geojsonFile = must('#geojson-file');
   els.exportGeojson = must('#export-geojson');
@@ -249,6 +295,7 @@ function wireEvents() {
     // Clear the input so re-picking the same file fires another change event.
     event.target.value = '';
   });
+  els.discardDraft.addEventListener('click', () => discardDraft());
   els.exportGeojson.addEventListener('click', () => exportGeoJson());
   els.importDialog.addEventListener('close', () => {
     if (els.importDialog.returnValue === 'import') runImport();
@@ -263,6 +310,9 @@ function wireEvents() {
       state.dirty = true;
       renderFields();
       refresh({ rebuildTables: true });
+      // Undo and redo change the document, so the draft has to follow them.
+      // Otherwise a reload would resurrect a state the user just undid.
+      scheduleDraftSave();
       setStatus(
         els.status,
         `${direction === 'undo' ? 'Undid' : 'Redid'}: ${label ?? 'the last change'}.`,
@@ -285,6 +335,7 @@ function commit(label, options = {}) {
   if (state.site === null) return;
   state.history.push(state.site, label, options);
   markDirty();
+  scheduleDraftSave();
 }
 
 function markDirty() {
@@ -340,20 +391,33 @@ async function loadSiteFromFile(file) {
  * @param {unknown} site
  * @param {string} sourceLabel
  */
-function adoptSite(site, sourceLabel) {
+function adoptSite(site, sourceLabel, options = {}) {
+  const { fromDraft = false, restoreView = false } = options;
   if (site === null || typeof site !== 'object' || Array.isArray(site)) {
     throw new Error(`"${sourceLabel}" does not contain a site object.`);
   }
   state.site = ensureContainers(site);
   state.sourceLabel = sourceLabel;
   // A new document gets a new history: undo must not reach back into the file
-  // that was open before this one.
-  state.history.reset(state.site, `Loaded ${sourceLabel}`);
+  // that was open before this one, nor into the state a restored draft was in
+  // when it was saved. A restore therefore starts from a clean stack too.
+  state.history.reset(state.site, fromDraft ? `Restored ${sourceLabel}` : `Loaded ${sourceLabel}`);
   state.dirty = false;
   els.ctxDirty.hidden = true;
+  state.restoredFromDraft = fromDraft;
+  els.ctxDraft.hidden = !fromDraft;
   setContext(els.ctxSource, sourceLabel);
   renderFields();
-  refresh({ rebuildTables: true, fitMap: true });
+
+  // A restored draft keeps the viewport it was left at; a freshly loaded
+  // document is framed to its own geometry.
+  const view = restoreView ? readStoredView() : null;
+  refresh({ rebuildTables: true, fitMap: view === null });
+  if (view !== null) applyStoredView(view);
+
+  // Opening a document deliberately makes it the active editing state: it
+  // replaces whatever draft was there, so the previous one cannot come back.
+  if (!fromDraft) saveDraftNow();
 
   // The tile state is asked for rather than pushed, because a tile failure
   // usually happens before the file finishes loading and would otherwise be
@@ -407,6 +471,10 @@ function refresh(options = {}) {
   renderValidation();
   renderStatistics();
   updateMap(fitMap);
+  // Every path that changes the document ends here, so this is the one place
+  // that has to remember to persist. Typing is captured even before the field
+  // is committed to history, so a reload mid-edit does not lose the keystrokes.
+  scheduleDraftSave();
 }
 
 /** Write the current site into the form controls. Only called on load. */
@@ -695,6 +763,7 @@ function initMap() {
           'warning'
         );
       },
+      onViewChanged: () => scheduleViewSave(),
     });
   } catch (err) {
     state.mapView = null;
@@ -785,6 +854,118 @@ function nextPointId() {
 function round(value) {
   const factor = 10 ** COORDINATE_DECIMALS;
   return Math.round(value * factor) / factor;
+}
+
+// --- local draft persistence ------------------------------------------------
+
+/**
+ * Write the draft, at most once per pause in editing.
+ *
+ * Every keystroke re-renders, and `localStorage` is synchronous on the main
+ * thread, so an unthrottled save would make typing stutter for no benefit: only
+ * the last value matters.
+ */
+const scheduleDraftSave = debounce(() => saveDraftNow(), DRAFT_SAVE_DELAY_MS);
+
+/** Write the draft immediately. */
+function saveDraftNow() {
+  if (state.site === null) return;
+  const result = state.draftStore.save(state.site, { sourceLabel: state.sourceLabel });
+  if (result.ok || state.saveFailureReported) return;
+
+  // Said once. A tool that cannot persist still works, and repeating the
+  // warning on every keystroke would bury whatever else the status line says.
+  state.saveFailureReported = true;
+  setStatus(
+    els.status,
+    `${result.reason} Your work is not being saved in this browser; export the file to keep it.`,
+    'warning'
+  );
+}
+
+/**
+ * Restore the stored draft, if there is a usable one.
+ *
+ * @returns {boolean} whether a draft was adopted
+ */
+function restoreDraft() {
+  const result = state.draftStore.load();
+
+  if (result.status === LOAD_STATUS.OK) {
+    const label = typeof result.meta.sourceLabel === 'string' ? result.meta.sourceLabel : 'a local draft';
+    adoptSite(result.document, label, { fromDraft: true, restoreView: true });
+    setStatus(
+      els.status,
+      `Restored your local draft of "${label}"${formatSavedAt(result.savedUtc)}. ` +
+        `It is stored in this browser only — export the file to keep it. ` +
+        `Use "Discard local draft" to start again from the demo site.`,
+      'info'
+    );
+    return true;
+  }
+
+  if (result.status === LOAD_STATUS.EMPTY || result.status === LOAD_STATUS.UNAVAILABLE) {
+    return false;
+  }
+
+  // Unreadable, incompatible or the wrong kind of document. It cannot be turned
+  // back into a site, and leaving it in place would repeat this on every load,
+  // so it is removed — and the user is told, rather than it happening silently.
+  state.draftStore.clear();
+  setStatus(
+    els.status,
+    `A saved draft was found but could not be restored: ${result.reason} ` +
+      `It has been removed and the demo site loaded instead.`,
+    'warning'
+  );
+  return false;
+}
+
+/** Throw away the stored draft and start again from a clean page. */
+function discardDraft() {
+  const had = state.draftStore.has();
+  const proceed = window.confirm(
+    had
+      ? 'Discard the draft saved in this browser?\n\nThe document on screen is not a file: ' +
+          'anything you have not exported will be lost, and the page will reload with the demo site.'
+      : 'There is no saved draft. Reload the page with the demo site?'
+  );
+  if (!proceed) {
+    setStatus(els.status, 'Kept the local draft.', 'info');
+    return;
+  }
+
+  // Cancel the pending write first, or it would re-create what was just cleared.
+  scheduleDraftSave.cancel();
+  state.draftStore.clear();
+  state.viewStore.clear();
+  window.location.reload();
+}
+
+/** The saved map viewport, or null when there is not a usable one. */
+function readStoredView() {
+  const result = state.viewStore.load();
+  return result.status === LOAD_STATUS.OK ? result.document : null;
+}
+
+function applyStoredView(view) {
+  // The map redraw is deferred by updateMap(), so the view has to be applied
+  // after it, or fitting the new geometry would immediately override it.
+  setTimeout(() => {
+    state.mapView?.restoreView(view);
+  }, 0);
+}
+
+/** Remember where the user left the map. Its own slot, its own failure mode. */
+const scheduleViewSave = debounce(() => {
+  if (state.mapView === null) return;
+  state.viewStore.save(state.mapView.viewState());
+}, DRAFT_SAVE_DELAY_MS);
+
+function formatSavedAt(savedUtc) {
+  if (typeof savedUtc !== 'string') return '';
+  const when = new Date(savedUtc);
+  return Number.isNaN(when.getTime()) ? '' : `, saved ${when.toLocaleString()}`;
 }
 
 // --- GeoJSON import ---------------------------------------------------------

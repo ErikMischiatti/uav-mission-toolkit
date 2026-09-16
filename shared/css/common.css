@@ -378,6 +378,21 @@ body.tool {
   font-family: var(--font-mono);
 }
 
+/*
+ * A small standing label for a state that is neither a verdict nor an error —
+ * "this came from a local draft", for instance. Quiet on purpose: it is
+ * context, not a warning.
+ */
+.chip {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 1px var(--space-2);
+  white-space: nowrap;
+}
+
 /* An unsaved-changes marker. */
 .dirty-dot {
   background: var(--warning);

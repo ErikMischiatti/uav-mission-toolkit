@@ -39,6 +39,13 @@
         <span class="context__label">Site</span>
         <span id="ctx-source" class="context__value context__value--muted">nothing loaded</span>
         <span id="ctx-dirty" class="dirty-dot" title="Unsaved changes" hidden></span>
+        <span
+          id="ctx-draft"
+          class="chip"
+          title="This document was restored from a draft saved in this browser. It is not a file — export it to keep it."
+          hidden
+          >local draft</span
+        >
       </div>
       <div class="context">
         <span class="context__label">Frame</span>
@@ -80,7 +87,12 @@
           </div>
           <div class="button-row">
             <button id="export-geojson" type="button">Export GeoJSON</button>
+            <button id="discard-draft" type="button" class="danger">Discard local draft</button>
           </div>
+          <p class="panel__hint">
+            Edits are kept in this browser so a reload does not lose them. That is recovery, not
+            storage: export the file to keep the work.
+          </p>
         </section>
 
         <section class="panel">
