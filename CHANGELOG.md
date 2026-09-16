@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   id, name, origin and frame a trajectory was drawn in, so a file says which
   coordinate system it belongs to without being bound to a filename
 - `site_id` on a site definition: an optional, explicit, stable identifier
+- **Browser-local drafts** under `shared/js/persistence.js`. Both editors keep
+  the document being edited in `localStorage` and restore it after a reload,
+  under namespaced, versioned keys (`uav-mission-toolkit:v1:<tool>:draft`). A
+  restored document is marked in the context bar, starts with an empty undo
+  stack, and can be discarded explicitly; opening the demo or a file replaces
+  the draft, and exporting never deletes it. Map centre/zoom and the trajectory
+  canvas viewport are remembered in their own slots. Stored data that cannot be
+  read is reported and removed rather than repaired, and unavailable storage is
+  reported once without taking the tool down
 - **Undo and redo**, from one shared history under `shared/js/history.js`, in
   the site editor and the trajectory editor. Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and
   Ctrl/Cmd+Y, plus toolbar buttons that disable themselves and name the

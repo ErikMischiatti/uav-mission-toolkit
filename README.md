@@ -37,6 +37,9 @@ This is not a flight-safety system. See [SECURITY.md](SECURITY.md).
   as it is drawn.
 - Undo and redo in both editors, from one shared history, with the usual
   keyboard shortcuts. A drag is a single undoable operation.
+- Browser-local drafts: both editors keep what you are working on in this
+  browser and restore it after a reload, mark it clearly as a draft, and let you
+  discard it. Exporting the file never deletes the draft.
 - Generic GeoJSON import with an explicit mapping step — nothing is imported
   until you say what each feature becomes — and GeoJSON export for inspection in
   a GIS.
@@ -264,6 +267,39 @@ and the status line says so. Panning, zooming, the scale bar, the safety
 polygon, the mission points and every drag handle keep working — only the
 background imagery is missing.
 
+## Local drafts
+
+Both editors keep the document you are working on in this browser's
+`localStorage`, so a reload or a closed tab does not lose it. It is restored on
+the next visit, marked **local draft** in the context bar, and the status line
+says when it was saved.
+
+This is **recovery, not storage**. The draft lives in one browser profile on one
+machine, it is not a file, it is not backed up, and clearing site data removes
+it. Export the file to keep the work.
+
+- Opening the demo or a file deliberately makes that document the active editing
+  state and replaces the stored draft.
+- Exporting does not clear the draft.
+- A restored document starts with an empty undo history.
+- "Discard local draft" clears it and reloads the page.
+- Map centre/zoom and the trajectory canvas viewport are remembered too, in
+  separate slots.
+
+Stored data that cannot be read — hand-edited, from another version of the
+toolkit, or the wrong kind of document — is reported and removed rather than
+patched into something plausible. If storage is unavailable (a private window,
+blocked site data, a full quota) the tools say so once and keep working.
+
+Keys, should you need to clear them by hand:
+
+```text
+uav-mission-toolkit:v1:site_editor:draft
+uav-mission-toolkit:v1:site_editor:view
+uav-mission-toolkit:v1:trajectory_editor:draft
+uav-mission-toolkit:v1:trajectory_editor:view
+```
+
 ## Known limitations
 
 Stated plainly, because a planning tool that oversells itself is worse than no
@@ -290,6 +326,9 @@ tool:
 - **Bulk download** issues one browser download per file; browsers may ask for
   permission or throttle. There is no ZIP, because that would mean a dependency.
 - **Touch-screen editing is untested.**
+- **A draft is not a backup.** It lives in one browser profile on one machine,
+  survives a reload but not a cleared cache, a different browser or a different
+  computer, and is not versioned. Export the file.
 - **Map tiles still need an internet connection.** Leaflet itself is vendored
   and works offline; the imagery is not. The map degrades to geometry on a
   graticule background, which is enough to keep working but is not a basemap.
@@ -308,8 +347,7 @@ Roughly in the order it would make sense to do the work:
 4. Loading an existing trajectory back into the trajectory editor. It can be
    written and swept, but not reopened.
 5. Plain waypoint CSV import, with the same explicit mapping step GeoJSON uses.
-6. Draft persistence in `localStorage`, so a reload does not lose work.
-7. A printable mission summary.
+6. A printable mission summary.
 
 ## Contributing
 

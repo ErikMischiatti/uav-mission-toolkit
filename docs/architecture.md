@@ -77,13 +77,15 @@ messages in `shared/js/io.js` say so explicitly.
 | `site_map.js` | Leaflet rendering of a site, in editable or read-only mode. |
 | `ui.js` | DOM helpers, findings rendering, the validation verdict, the context bar, status messages, contextual help, global error handlers. |
 | `history.js` | Undo/redo. One implementation, used by every tool that edits a document. |
+| `persistence.js` | Browser-local draft storage: versioned keys, a refusing reader, and a debounce. |
 | `geojson.js` | Generic GeoJSON import and export, and the mapping step that keeps it explicit. |
 
 Dependency direction is one way: `geo.js` depends on nothing; `validation.js`
 and `trajectory.js` depend on `geo.js` and `io.js`; `geojson.js` depends on
 `geo.js`, `io.js` and `validation.js`; `site_map.js` depends on `geo.js`,
-`io.js` and `ui.js`; `history.js` depends on nothing at all; every tool depends
-on the shared layer and never the reverse. There are no cycles.
+`io.js` and `ui.js`; `history.js` and `persistence.js` depend on nothing at all;
+every tool depends on the shared layer and never the reverse. There are no
+cycles.
 
 ### Why undo/redo stores snapshots
 
@@ -101,6 +103,61 @@ A drag would otherwise leave one entry per pointer event. Callers either commit
 once at the end of the gesture, or pass a `coalesceKey` so consecutive pushes
 carrying the same key replace each other. Loading a document calls `reset()`, so
 undo can never walk backwards out of the file the user is looking at.
+
+### Browser-local drafts
+
+`persistence.js` keeps the document being edited in `localStorage`, so closing a
+tab or reloading does not lose it. That is the entire scope: **recovery for one
+browser on one machine**, not storage and not sync. The exported file is still
+the artefact that matters, and the UI says so wherever a draft is involved.
+
+Keys are namespaced and versioned:
+
+```text
+uav-mission-toolkit:v1:site_editor:draft
+uav-mission-toolkit:v1:site_editor:view
+uav-mission-toolkit:v1:trajectory_editor:draft
+uav-mission-toolkit:v1:trajectory_editor:view
+```
+
+The prefix keeps the toolkit from colliding with anything else on the same
+origin. The `v1` is the *envelope* version, not the document `schema_version`: a
+future envelope writes different keys, so old and new drafts coexist rather than
+one silently overwriting the other, and an envelope from a version this build
+does not know is refused instead of guessed at.
+
+The viewport lives in its own slot on purpose. A corrupt stored viewport then
+costs a fallback to fitting the geometry, not the draft.
+
+**The reader never repairs anything.** A stored value is either returned exactly
+as written or refused with a reason. This matters more than for a file, because
+a draft is restored at start-up rather than chosen by a human: there is no point
+at which somebody looks at it and decides it is the right data.
+
+**What counts as restorable is weaker than what a file must satisfy.** A draft is
+work in progress — an altitude not yet filled in, a polygon mid-edit — and those
+are exactly the states worth recovering. So the only question asked is
+structural ("is this the kind of document this tool edits?"); everything about
+its content is reported on screen by `validation.js`, in the usual way. Restoring
+a draft therefore tells the reader no less than loading the same file would.
+
+**Storage failure is normal, not exceptional.** A private window, blocked site
+data or a full quota all throw, so every access is wrapped and every method
+returns a result. A tool that cannot persist still works; it says so once and
+carries on. A failed write leaves the previous draft alone rather than
+destroying it as well.
+
+Rules the tools follow, rather than the module:
+
+- Opening the demo or a file makes that document the active editing state and
+  replaces the stored draft, so the previous one cannot reappear later.
+- Exporting does **not** clear the draft. The file and the draft are separate
+  things, and finishing one is no reason to destroy the other.
+- A restored document starts with an empty undo stack. Undo must not walk back
+  into the state a draft happened to be saved in, which is not a state the user
+  did anything to reach.
+- Undo and redo re-save, so a reload cannot resurrect a state that was undone.
+- "Discard local draft" is the explicit way out: it clears the slots and reloads.
 
 ### Why the trajectory editor cannot edit a site
 
