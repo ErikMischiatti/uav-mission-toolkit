@@ -19,6 +19,13 @@
 import { distance2dM, pathSegmentsLeavingPolygon, pointInPolygon } from '../shared/js/geo.js';
 import { History, attachHistoryControls } from '../shared/js/history.js';
 import {
+  DraftStore,
+  LOAD_STATUS,
+  debounce,
+  looksLikeCanvasView,
+  looksLikeTrajectoryDraft,
+} from '../shared/js/persistence.js';
+import {
   downloadJson,
   downloadText,
   fetchJson,
@@ -73,6 +80,8 @@ const DEGENERATE_SEGMENT_M = 0.01;
  * reported as a validation error, so this never silently reaches a file.
  */
 const DEGENERATE_PATH_HEADING_DEG = 0;
+/** Matches the site editor: one write per pause in editing, not per keystroke. */
+const DRAFT_SAVE_DELAY_MS = 400;
 
 /** Example index. The toolkit never scrapes an HTTP directory listing. */
 const MANIFEST_URL = '../examples/manifest.json';
@@ -95,6 +104,10 @@ const state = {
   manifestUrl: null,
   /** @type {Array<object>} */
   manifestSites: [],
+  /** Site selection a restored draft asked for, applied once the manifest loads. */
+  pendingSiteSource: null,
+  /** When the restored draft was written, for the status line. */
+  restoredSavedUtc: null,
   /**
    * Undo/redo over the editable part of the trajectory: the control points,
    * the closed flag and the selection. The site is context, not content, so it
@@ -102,6 +115,23 @@ const state = {
    * an edit to the trajectory.
    */
   history: new History(),
+
+  /**
+   * The editing state, kept in this browser so a reload does not lose the path.
+   * What is stored is the same shape undo restores - the control points plus
+   * the flight parameters - because that is exactly what "the work" is here.
+   */
+  draftStore: new DraftStore({
+    slot: 'trajectory_editor:draft',
+    accept: looksLikeTrajectoryDraft,
+  }),
+  /** Canvas pan/zoom, in its own slot so a bad viewport cannot cost a draft. */
+  viewStore: new DraftStore({
+    slot: 'trajectory_editor:view',
+    accept: looksLikeCanvasView,
+  }),
+  restoredFromDraft: false,
+  saveFailureReported: false,
 };
 
 const els = {};
@@ -115,14 +145,22 @@ document.addEventListener('DOMContentLoaded', () => {
   initCanvas();
   updatePresetVisibility();
   renderSiteSummary();
-  generateFromPreset({ announce: false });
-  setStatus(
-    els.status,
-    'Racetrack preset loaded. Choose a site for context, and set an altitude and an altitude ' +
-      'reference before exporting.',
-    'info'
-  );
+
+  if (!restoreDraft()) {
+    generateFromPreset({ announce: false });
+    setStatus(
+      els.status,
+      'Racetrack preset loaded. Choose a site for context, and set an altitude and an altitude ' +
+        'reference before exporting.',
+      'info'
+    );
+  }
   loadSiteManifest();
+
+  window.addEventListener('pagehide', () => {
+    scheduleDraftSave.flush();
+    scheduleViewSave.flush();
+  });
 });
 
 function cacheElements() {
@@ -159,6 +197,8 @@ function cacheElements() {
 
   els.undo = must('#undo');
   els.redo = must('#redo');
+  els.discardDraft = must('#discard-draft');
+  els.ctxDraft = must('#ctx-draft');
 
   els.ctxSite = must('#ctx-site');
   els.ctxFrame = must('#ctx-frame');
@@ -223,6 +263,8 @@ function wireEvents() {
     apply: (snapshot, direction, label) => {
       restoreSnapshot(snapshot);
       refresh({ rebuildTable: true });
+      // Undo and redo change the document, so the draft follows them.
+      scheduleDraftSave();
       setStatus(
         els.status,
         `${direction === 'undo' ? 'Undid' : 'Redid'}: ${label ?? 'the last change'}.`,
@@ -231,6 +273,7 @@ function wireEvents() {
     },
   });
 
+  els.discardDraft.addEventListener('click', () => discardDraft());
   els.siteSource.addEventListener('change', () => onSiteSourceChanged());
   els.siteFile.addEventListener('change', (event) => {
     const [file] = event.target.files ?? [];
@@ -260,6 +303,23 @@ async function loadSiteManifest() {
         })
       );
     });
+
+    // A restored draft remembers which example site it was drawn against. A
+    // site opened from a local file cannot be re-read, so that selection is
+    // not restored and the editor stays on "no site" rather than pretending.
+    const wanted = state.pendingSiteSource;
+    state.pendingSiteSource = null;
+    if (wanted && wanted !== 'none' && wanted.startsWith('example:')) {
+      const option = els.siteSource.querySelector(`option[value="${wanted}"]`);
+      if (option !== null) {
+        els.siteSource.value = wanted;
+        // Re-selecting the site writes its own status when it finishes
+        // loading. Wait for that, then say the more important thing last:
+        // that what is on screen came back from a local draft.
+        await onSiteSourceChanged();
+        if (state.restoredFromDraft) announceRestoredDraft(state.restoredSavedUtc);
+      }
+    }
   } catch (err) {
     // A missing manifest must not take the tool down: the local-file path and
     // the no-site path both still work.
@@ -267,15 +327,20 @@ async function loadSiteManifest() {
   }
 }
 
+/**
+ * @returns {Promise<void>} resolved once the site has actually been adopted,
+ *   so a caller can write a status line that is not overwritten by this one.
+ */
 function onSiteSourceChanged() {
+  scheduleDraftSave();
   const value = els.siteSource.value;
   if (value === 'none') {
     adoptSite(null, null);
     setStatus(els.status, 'Working without a site, in an abstract local plane.', 'info');
-    return;
+    return Promise.resolve();
   }
   const index = Number(value.slice('example:'.length));
-  loadExampleSite(index);
+  return loadExampleSite(index);
 }
 
 async function loadExampleSite(index) {
@@ -459,6 +524,10 @@ function snapshot() {
     headingMode: els.headingMode.value,
     fixedHeading: els.fixedHeading.value,
     preset: els.presetSelect.value,
+    // Which site was selected, not the site itself: a site is read-only
+    // context loaded from the manifest, and a site opened from a local file
+    // cannot be re-read after a reload.
+    siteSource: els.siteSource.value,
   };
 }
 
@@ -479,6 +548,106 @@ function restoreSnapshot(snap) {
   updatePresetVisibility();
 }
 
+// --- local draft persistence ------------------------------------------------
+
+/** Write the draft, at most once per pause in editing. */
+const scheduleDraftSave = debounce(() => saveDraftNow(), DRAFT_SAVE_DELAY_MS);
+
+function saveDraftNow() {
+  if (state.points.length === 0) return;
+  const result = state.draftStore.save(snapshot(), { siteLabel: state.siteLabel });
+  if (result.ok || state.saveFailureReported) return;
+  state.saveFailureReported = true;
+  setStatus(
+    els.status,
+    `${result.reason} Your work is not being saved in this browser; export the file to keep it.`,
+    'warning'
+  );
+}
+
+/** Remember the canvas pan/zoom, in its own slot. */
+const scheduleViewSave = debounce(() => {
+  if (state.canvas === null) return;
+  state.viewStore.save({ ...state.canvas.view });
+}, DRAFT_SAVE_DELAY_MS);
+
+/**
+ * Restore the stored editing state, if there is a usable one.
+ * @returns {boolean} whether a draft was adopted
+ */
+function restoreDraft() {
+  const result = state.draftStore.load();
+
+  if (result.status === LOAD_STATUS.OK) {
+    restoreSnapshot(result.document);
+    // A restored document starts with a clean stack: undo must not walk back
+    // into whatever state the draft happened to be saved in.
+    state.history.reset(snapshot(), 'Restored local draft');
+    state.restoredFromDraft = true;
+    els.ctxDraft.hidden = false;
+
+    const view = state.viewStore.load();
+    if (view.status === LOAD_STATUS.OK && state.canvas !== null) {
+      state.canvas.view = { ...view.document };
+      refresh({ rebuildTable: true, fitCanvas: false });
+    } else {
+      refresh({ rebuildTable: true, fitCanvas: true });
+    }
+
+    // The site is context rather than content, so it is re-selected but
+    // re-loaded from the manifest rather than restored from the draft.
+    state.pendingSiteSource =
+      typeof result.document.siteSource === 'string' ? result.document.siteSource : null;
+    state.restoredSavedUtc = result.savedUtc ?? null;
+
+    announceRestoredDraft(result.savedUtc);
+    return true;
+  }
+
+  if (result.status === LOAD_STATUS.EMPTY || result.status === LOAD_STATUS.UNAVAILABLE) {
+    return false;
+  }
+
+  state.draftStore.clear();
+  setStatus(
+    els.status,
+    `A saved draft was found but could not be restored: ${result.reason} ` +
+      `It has been removed and a preset loaded instead.`,
+    'warning'
+  );
+  return false;
+}
+
+/** Say that the document on screen came back from a local draft. */
+function announceRestoredDraft(savedUtc) {
+  const when = typeof savedUtc === 'string' ? new Date(savedUtc) : null;
+  const saved = when !== null && !Number.isNaN(when.getTime()) ? `, saved ${when.toLocaleString()}` : '';
+  setStatus(
+    els.status,
+    `Restored your local draft of this trajectory${saved}. It is stored in this browser only — ` +
+      `export the file to keep it. Use "Discard local draft" to start again from a preset.`,
+    'info'
+  );
+}
+
+/** Throw away the stored draft and start again from a clean page. */
+function discardDraft() {
+  const proceed = window.confirm(
+    state.draftStore.has()
+      ? 'Discard the draft saved in this browser?\n\nThe trajectory on screen is not a file: ' +
+          'anything you have not exported will be lost, and the page will reload with a preset.'
+      : 'There is no saved draft. Reload the page with a preset?'
+  );
+  if (!proceed) {
+    setStatus(els.status, 'Kept the local draft.', 'info');
+    return;
+  }
+  scheduleDraftSave.cancel();
+  state.draftStore.clear();
+  state.viewStore.clear();
+  window.location.reload();
+}
+
 /**
  * Record the current editable state as one undoable operation.
  * @param {string} label
@@ -486,6 +655,7 @@ function restoreSnapshot(snap) {
  */
 function commit(label, options = {}) {
   state.history.push(snapshot(), label, options);
+  scheduleDraftSave();
 }
 
 function updatePresetVisibility() {
@@ -752,6 +922,10 @@ function refresh(options = {}) {
   if (rebuildTable) renderPointTable();
   renderMetrics();
   renderValidation();
+  // Every path that changes the document ends here, including typing that has
+  // not yet been committed to history.
+  scheduleDraftSave();
+  scheduleViewSave();
 }
 
 function drawCanvas({ fit }) {

@@ -30,6 +30,13 @@
       <div class="context">
         <span class="context__label">Site</span>
         <span id="ctx-site" class="context__value context__value--muted">no site</span>
+        <span
+          id="ctx-draft"
+          class="chip"
+          title="This trajectory was restored from a draft saved in this browser. It is not a file — export it to keep it."
+          hidden
+          >local draft</span
+        >
       </div>
       <div class="context">
         <span class="context__label">Frame</span>
@@ -225,7 +232,12 @@
           <div class="button-row">
             <button id="download-json" type="button" class="primary">Export JSON</button>
             <button id="download-csv" type="button">Export CSV</button>
+            <button id="discard-draft" type="button" class="danger">Discard local draft</button>
           </div>
+          <p class="panel__hint">
+            Edits are kept in this browser so a reload does not lose them. That is recovery, not
+            storage: export the file to keep the work.
+          </p>
           <p class="panel__hint">
             The JSON document is the authoritative form: it records the frame, the altitude
             reference and the site context. The CSV is
