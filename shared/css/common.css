@@ -208,6 +208,14 @@ code,
  */
 body.tool {
   display: grid;
+  /*
+   * The column is pinned rather than left implicit. An implicit `auto` track is
+   * sized to the widest child's min-content, so one unbreakable row - a context
+   * bar carrying a long filename, say - would widen the whole page past the
+   * viewport and scroll it sideways. `minmax(0, 1fr)` lets the rows shrink and
+   * handle their own overflow instead.
+   */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100vh;
   height: 100dvh;
@@ -321,6 +329,13 @@ body.tool {
 .context__value {
   font-family: var(--font-mono);
   font-size: 12px;
+  /*
+   * A flex child's default minimum is its min-content width, which for
+   * `white-space: nowrap` is the whole string - so without this the
+   * text-overflow below can never take effect, and a long filename widens the
+   * bar instead of being truncated by it.
+   */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
